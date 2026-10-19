@@ -82,5 +82,20 @@
     "weekly_depleted": "Weekly limit exhausted",
     "hours_window": "{{n}} hour window",
     "minutes_window": "{{n}} min window"
+  },
+  "view": {
+    "label": "View",
+    "cards": "Card view",
+    "calendar": "Reset calendar"
+  },
+  "calendar": {
+    "title": "Reset windows",
+    "desc": "Browse quota reset times for the selected accounts by week.",
+    "prev": "Previous week",
+    "next": "Next week",
+    "today": "This week",
+    "empty_day": "No resets",
+    "no_events": "No reset times in this week",
+    "event_remaining": "{{percent}}% left"
   }
 }

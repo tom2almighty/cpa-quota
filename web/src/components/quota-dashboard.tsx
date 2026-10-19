@@ -1,11 +1,22 @@
 import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
-import { AlertTriangle, ChevronLeft, ChevronRight, KeyRound, RefreshCw, RotateCcw, Search } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  KeyRound,
+  LayoutGrid,
+  RefreshCw,
+  RotateCcw,
+  Search,
+} from "lucide-react";
 import { useDeferredValue, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { KeyDialog } from "@/components/key-dialog";
 import { LanguageToggle } from "@/components/language-toggle";
 import { Logo } from "@/components/logo";
+import { ResetCalendar } from "@/components/reset-calendar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   AlertDialog,
@@ -19,10 +30,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useManagementKey } from "@/hooks/use-management-key";
 import i18n from "@/i18n";
 import { useI18n } from "@/i18n/context";
@@ -34,55 +47,13 @@ import {
   resetQuota,
   UnauthorizedError,
 } from "@/lib/api";
-import { formatDateTime, maskKeyName, prettifyWindow } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
+import { bucketLabel, bucketTone, credentialName, detailText, providerLabel } from "@/lib/quota-ui";
 import { cn } from "@/lib/utils";
 import type { Credential, QuotaBucket, QuotaGroup, QuotaMetric, QuotaResponse } from "@/types";
 
 const PAGE_SIZE = 12;
 const RESET_PROVIDERS = new Set(["claude", "codex"]);
-
-function providerLabel(provider: string): string {
-  switch (provider.toLowerCase()) {
-    case "claude":
-    case "anthropic":
-      return "Claude";
-    case "codex":
-      return "Codex";
-    case "antigravity":
-      return "Antigravity";
-    case "kimi":
-    case "kimi-ai":
-      return "Kimi";
-    case "xai":
-      return "xAI";
-    case "devin":
-      return "Devin";
-    case "meta":
-      return "Meta";
-    default:
-      return provider;
-  }
-}
-
-function credentialName(credential: Credential): string {
-  return credential.email || credential.label || credential.account || maskKeyName(credential.name);
-}
-
-function bucketLabel(bucket: QuotaBucket, t: TFunction): string {
-  const key = (bucket.window ?? "").trim();
-  if (key) {
-    const translated = i18n.t(`window.${key}`, { defaultValue: "" });
-    if (translated) return translated;
-  }
-  return prettifyWindow(key) || t("common.unknown");
-}
-
-function bucketTone(fraction: number): "success" | "warning" | "danger" {
-  const percent = Math.round(fraction * 100);
-  if (percent <= 0) return "danger";
-  if (percent <= 20) return "warning";
-  return "success";
-}
 
 function metricText(metric: QuotaMetric, t: TFunction): string {
   if (metric.unit === "disabled") return t("summary.disabled");
@@ -103,19 +74,6 @@ function metricLabel(metric: QuotaMetric): string {
   return translated || metric.label;
 }
 
-function detailText(description: string, t: TFunction): string {
-  const models = description.match(/^Models within this group:\s*(.+)$/i);
-  if (models) return t("detail.group_models", { models: models[1] });
-  const depleted = description.match(/^(.*?)\s*·\s*Weekly limit exhausted$/i);
-  if (depleted) return `${depleted[1]} · ${t("detail.weekly_depleted")}`;
-  if (/^Weekly limit exhausted$/i.test(description)) return t("detail.weekly_depleted");
-  const hours = description.match(/^(\d+) hour window$/i);
-  if (hours) return t("detail.hours_window", { n: hours[1] });
-  const minutes = description.match(/^(\d+) min window$/i);
-  if (minutes) return t("detail.minutes_window", { n: minutes[1] });
-  return description;
-}
-
 function BucketRow({ bucket, t }: { bucket: QuotaBucket; t: TFunction }) {
   const fraction = Math.max(0, Math.min(1, bucket.remainingFraction));
   const percent = Math.round(fraction * 100);
@@ -124,29 +82,36 @@ function BucketRow({ bucket, t }: { bucket: QuotaBucket; t: TFunction }) {
   const textTone = tone === "danger" ? "text-destructive" : tone === "warning" ? "text-warning" : "text-success";
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex min-w-0 items-baseline justify-between gap-2">
-        <div className="min-w-0">
-          <span className="truncate text-xs font-medium text-foreground">{bucketLabel(bucket, t)}</span>
+    <div className="space-y-1">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="max-w-28 shrink-0 truncate text-xs font-medium text-foreground">{bucketLabel(bucket)}</span>
           {bucket.description && (
-            <span className="ml-1.5 truncate text-xs text-muted-foreground">{detailText(bucket.description, t)}</span>
+            <Tooltip>
+              <TooltipTrigger
+                render={<span className="min-w-0 max-w-36 cursor-help truncate text-xs text-muted-foreground" />}
+              >
+                {detailText(bucket.description)}
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs break-words">{detailText(bucket.description)}</TooltipContent>
+            </Tooltip>
           )}
         </div>
         <span className={cn("shrink-0 font-mono text-xs font-semibold tabular-nums", textTone)}>{percent}%</span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+      <div className="h-1 overflow-hidden rounded-full bg-muted">
         <div
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={percent}
-          aria-label={bucketLabel(bucket, t)}
+          aria-label={bucketLabel(bucket)}
           className={cn("h-full rounded-full transition-all duration-300", barTone)}
           style={{ width: `${percent}%` }}
         />
       </div>
       {bucket.resetTime && (
-        <p className="text-right text-[11px] text-muted-foreground">
+        <p className="text-right text-[10px] text-muted-foreground">
           {t("quota.reset_at", { time: formatDateTime(bucket.resetTime) })}
         </p>
       )}
@@ -209,95 +174,100 @@ function QuotaCard({
   const summary = quota?.summary ?? [];
   const plan = quota?.subscription?.plan || quota?.subscription?.tierName;
   const canReset = RESET_PROVIDERS.has(provider);
+  const name = credentialName(credential);
 
   return (
-    <Card className="gap-3 p-4">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="truncate text-sm font-medium" title={credentialName(credential)}>
-            {credentialName(credential)}
-          </h3>
-          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            <Badge variant="secondary" className="text-[10px] font-normal uppercase">
-              {providerLabel(provider)}
-            </Badge>
-            {plan && (
-              <Badge variant="outline" className="text-[10px] font-normal">
-                {plan}
+    <Card size="sm" className="gap-2">
+      <CardHeader className="gap-1.5">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-medium" title={name}>
+              {name}
+            </h3>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              <Badge variant="secondary" className="text-[10px] font-normal uppercase">
+                {providerLabel(provider)}
               </Badge>
-            )}
+              {plan && (
+                <Badge variant="outline" className="text-[10px] font-normal">
+                  {plan}
+                </Badge>
+              )}
+            </div>
           </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          {canReset && (
+          <div className="flex shrink-0 items-center gap-0.5">
+            {canReset && (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                title={t("quota.reset")}
+                aria-label={t("quota.reset")}
+                disabled={pending || Boolean(error)}
+                onClick={onReset}
+              >
+                <RotateCcw className="size-3.5" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon-xs"
-              title={t("quota.reset")}
-              aria-label={t("quota.reset")}
-              disabled={pending || Boolean(error)}
-              onClick={onReset}
+              title={t("common.refresh")}
+              aria-label={`${t("common.refresh")} ${name}`}
+              disabled={fetching}
+              onClick={onRefresh}
             >
-              <RotateCcw className="size-3.5" />
+              <RefreshCw className={cn("size-3.5", fetching && "animate-spin")} />
             </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            title={t("common.refresh")}
-            aria-label={`${t("common.refresh")} ${credentialName(credential)}`}
-            disabled={fetching}
-            onClick={onRefresh}
-          >
-            <RefreshCw className={cn("size-3.5", fetching && "animate-spin")} />
-          </Button>
+          </div>
         </div>
-      </div>
+      </CardHeader>
 
-      {pending ? (
-        <div className="space-y-3">
-          <Skeleton className="h-8 w-full" />
-          <Skeleton className="h-8 w-full" />
-        </div>
-      ) : error ? (
-        <div className="rounded-md bg-destructive/10 p-3 text-xs text-destructive">
-          <p className="font-medium">{t("quota.query_failed")}</p>
-          <p className="mt-1 break-words opacity-90">{error.message}</p>
-          <Button variant="outline" size="sm" className="mt-2 h-6 text-xs" onClick={onRefresh}>
-            {t("common.retry")}
-          </Button>
-        </div>
-      ) : groups.length === 0 ? (
-        <p className="py-3 text-center text-xs text-muted-foreground">{t("quota.no_details")}</p>
-      ) : (
-        <div className="space-y-4">
-          {groups.map((group) => (
-            <GroupBlock
-              key={`${group.displayName ?? "group"}-${(group.buckets ?? []).map((bucket) => bucket.window ?? "").join("-")}`}
-              group={group}
-              provider={provider}
-              showTitle={
-                groups.length > 1 || (group.displayName ?? "").toLowerCase() !== providerLabel(provider).toLowerCase()
-              }
-              t={t}
-            />
-          ))}
-        </div>
-      )}
+      <CardContent className="space-y-3">
+        {pending ? (
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-6 w-full" />
+          </div>
+        ) : error ? (
+          <div className="rounded-md bg-destructive/10 p-2.5 text-xs text-destructive">
+            <p className="font-medium">{t("quota.query_failed")}</p>
+            <p className="mt-1 break-words opacity-90">{error.message}</p>
+            <Button variant="outline" size="sm" className="mt-2 h-6 text-xs" onClick={onRefresh}>
+              {t("common.retry")}
+            </Button>
+          </div>
+        ) : groups.length === 0 ? (
+          <p className="py-2 text-center text-xs text-muted-foreground">{t("quota.no_details")}</p>
+        ) : (
+          <div className="space-y-2.5">
+            {groups.map((group) => (
+              <GroupBlock
+                key={`${group.displayName ?? "group"}-${(group.buckets ?? []).map((bucket) => bucket.window ?? "").join("-")}`}
+                group={group}
+                provider={provider}
+                showTitle={
+                  groups.length > 1 || (group.displayName ?? "").toLowerCase() !== providerLabel(provider).toLowerCase()
+                }
+                t={t}
+              />
+            ))}
+          </div>
+        )}
 
-      {summary.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 border-t pt-3">
-          {summary.map((metric) => (
-            <Badge
-              key={metric.key}
-              variant="outline"
-              className="border-info/20 bg-info/10 text-[10px] font-normal text-info"
-            >
-              {metricLabel(metric)} · {metricText(metric, t)}
-            </Badge>
-          ))}
-        </div>
-      )}
+        {summary.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 border-t pt-2">
+            {summary.map((metric) => (
+              <Badge
+                key={metric.key}
+                variant="outline"
+                className="border-info/20 bg-info/10 text-[10px] font-normal text-info"
+              >
+                {metricLabel(metric)} · {metricText(metric, t)}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </CardContent>
     </Card>
   );
 }
@@ -307,6 +277,7 @@ export function QuotaDashboard() {
   const { key, source, setKey, clear } = useManagementKey();
   const queryClient = useQueryClient();
   const [channel, setChannel] = useState("all");
+  const [view, setView] = useState<"cards" | "calendar">("cards");
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
   const filterKey = `${channel}|${deferredSearch}`;
@@ -481,22 +452,53 @@ export function QuotaDashboard() {
               </TabsList>
             </Tabs>
 
-            <div className="relative sm:w-56">
-              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder={t("quota.search_placeholder")}
-                className="h-8 pl-8 text-xs"
-              />
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative sm:w-56">
+                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder={t("quota.search_placeholder")}
+                  className="h-8 pl-8 text-xs"
+                />
+              </div>
+              <ToggleGroup
+                value={[view]}
+                onValueChange={(value) => {
+                  const next = value[0];
+                  if (next === "cards" || next === "calendar") setView(next);
+                }}
+                size="sm"
+                aria-label={t("view.label")}
+                className="bg-muted/60 p-0.5"
+              >
+                <ToggleGroupItem
+                  value="cards"
+                  aria-label={t("view.cards")}
+                  title={t("view.cards")}
+                  className="size-7 text-muted-foreground aria-pressed:bg-background! aria-pressed:text-foreground aria-pressed:shadow-sm"
+                >
+                  <LayoutGrid className="size-3.5" />
+                </ToggleGroupItem>
+                <ToggleGroupItem
+                  value="calendar"
+                  aria-label={t("view.calendar")}
+                  title={t("view.calendar")}
+                  className="size-7 text-muted-foreground aria-pressed:bg-background! aria-pressed:text-foreground aria-pressed:shadow-sm"
+                >
+                  <CalendarDays className="size-3.5" />
+                </ToggleGroupItem>
+              </ToggleGroup>
             </div>
           </div>
 
           {filtered.length === 0 ? (
             <Card className="grid place-items-center py-12 text-sm text-muted-foreground">{t("quota.no_match")}</Card>
+          ) : view === "calendar" ? (
+            <ResetCalendar items={filtered.map(({ credential, query }) => ({ credential, quota: query.data }))} />
           ) : (
             <>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {pageItems.map(({ credential, query }) => (
                   <QuotaCard
                     key={credential.auth_index ?? credential.id}
