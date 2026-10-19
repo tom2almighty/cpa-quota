@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "id": "cpa-quota",
+      "name": "CPA Quota",
+      "description": "CLIProxyAPI 额度查询插件，通过 v8 QuotaProvider 为 Claude、Codex、Antigravity、Kimi、xAI、Devin、Meta 提供统一额度视图。",
+      "author": "tom2almighty",
+      "repository": "https://github.com/tom2almighty/cpa-quota",
+      "logo": "https://raw.githubusercontent.com/tom2almighty/cpa-quota/main/assets/logo.svg",
+      "homepage": "https://github.com/tom2almighty/cpa-quota",
+      "license": "AGPL-3.0",
+      "tags": [
+        "quota",
+        "billing",
+        "provider",
+        "dashboard"
+      ]
+    }
+  ]
+}

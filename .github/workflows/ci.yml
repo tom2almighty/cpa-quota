@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+    paths-ignore:
+      - 'README.md'
+      - 'README.en.md'
+      - '.gitignore'
+      - 'assets/**'
+  pull_request:
+    branches:
+      - main
+      - dev
+    paths-ignore:
+      - 'README.md'
+      - 'README.en.md'
+      - '.gitignore'
+      - 'assets/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.10.1
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Frontend Check & Build
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run lint
+          pnpm run format:check
+          pnpm run build
+      - name: Backend Test
+        run: |
+          go test ./...
+
+      - name: Backend Build Check
+        run: |
+          CGO_ENABLED=1 go build -buildmode=c-shared -o test-build.so .
+          rm -f test-build.so test-build.h

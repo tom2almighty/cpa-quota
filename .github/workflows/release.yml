@@ -1,0 +1,139 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.10.1
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Install and Build Frontend
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-dist
+          path: web/dist/index.html
+          retention-days: 1
+
+  build-binary:
+    needs: build-frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            ext: so
+          - os: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            ext: so
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            ext: dylib
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            ext: dylib
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            ext: dll
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-dist
+          path: web/dist
+
+      - name: Compile and Package
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          LIB_NAME="cpa-quota.${{ matrix.ext }}"
+          ZIP_NAME="cpa-quota_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}.zip"
+          mkdir -p dist
+
+          export GOOS="${{ matrix.goos }}"
+          export GOARCH="${{ matrix.goarch }}"
+          export CGO_ENABLED=1
+
+          if [ "${{ matrix.goos }}" = "darwin" ] && [ "${{ matrix.goarch }}" = "amd64" ]; then
+            export CC="clang -target x86_64-apple-macos10.13"
+          fi
+
+          echo "==> Building CGO shared library: ${LIB_NAME} for ${{ matrix.goos }}/${{ matrix.goarch }}..."
+          go build -buildmode=c-shared -ldflags="-s -w -X cpa-quota/internal/plugin.Version=${VERSION}" -o "${LIB_NAME}" .
+          rm -f "cpa-quota.h"
+
+          echo "==> Packaging into ${ZIP_NAME}..."
+          go run ./cmd/packager -src "${LIB_NAME}" -out "dist/${ZIP_NAME}" -checksum "dist/checksum.line"
+          rm -f "${LIB_NAME}"
+
+      - name: Upload platform zip
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          retention-days: 1
+
+  publish-release:
+    needs: build-binary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Download all release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: all-artifacts
+
+      - name: Prepare Release Assets
+        run: |
+          mkdir -p release-assets
+          find all-artifacts -name "*.zip" -exec cp {} release-assets/ \;
+          cat all-artifacts/**/checksum.line > release-assets/checksums.txt
+          cat release-assets/checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            release-assets/*.zip
+            release-assets/checksums.txt
+          generate_release_notes: true
