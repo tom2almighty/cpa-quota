@@ -1,0 +1,19 @@
+# Binaries and libraries
+*.so
+*.dylib
+*.dll
+*.h
+
+# Frontend dependencies and temp build output
+web/node_modules/
+web/.tmp/
+web/dist/index-*.js
+web/dist/style-*.css
+
+# Release artifacts
+release-dist/
+
+# OS and IDE
+.DS_Store
+.vscode/
+.idea/
