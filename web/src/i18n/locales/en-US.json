@@ -20,7 +20,6 @@
   "quota": {
     "title": "Quota Monitor",
     "subtitle": "Remaining quota and reset opportunities via the CPA v8 plugin quota API.",
-    "refresh_all": "Refresh all",
     "refreshing": "Refreshing",
     "updated": "Updated {{time}}",
     "empty": "No credentials expose quota",
@@ -36,7 +35,11 @@
     "search_placeholder": "Search accounts, notes, providers",
     "no_match": "No matching accounts",
     "remaining": "{{percent}}% left",
-    "reset_at": "Resets {{time}}"
+    "reset_at": "Resets {{time}}",
+    "page_summary": "{{from}}–{{to}} of {{total}}",
+    "per_page": "{{count}} per page",
+    "page_size_label": "Rows per page",
+    "refresh_page": "Refresh page"
   },
   "window": {
     "five_hour": "5 hour",
@@ -86,16 +89,22 @@
   "view": {
     "label": "View",
     "cards": "Card view",
-    "calendar": "Reset calendar"
+    "timeline": "Timeline"
   },
-  "calendar": {
-    "title": "Reset windows",
-    "desc": "Browse quota reset times for the selected accounts by week.",
-    "prev": "Previous week",
-    "next": "Next week",
-    "today": "This week",
-    "empty_day": "No resets",
-    "no_events": "No reset times in this week",
-    "event_remaining": "{{percent}}% left"
+  "timeline": {
+    "title": "Quota timeline",
+    "desc": "Project each account's quota windows across dates to see when capacity returns.",
+    "mode_label": "Time range",
+    "mode_weekly": "14 days",
+    "mode_session": "5 hours",
+    "prev": "Previous",
+    "next": "Next",
+    "today": "Now",
+    "credential": "Account",
+    "empty": "No quota window can be drawn on this page. Try another page or the card view.",
+    "empty_session": "No 5-hour quota window on this page. Try another page or the card view.",
+    "remaining": "{{percent}}% left",
+    "unknown": "Remaining unknown",
+    "hint": "Only windows with an inferable period are shown; see the card view for the rest."
   }
 }

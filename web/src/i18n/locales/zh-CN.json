@@ -20,7 +20,6 @@
   "quota": {
     "title": "额度监控",
     "subtitle": "通过 CPA v8 插件额度接口读取各账号的剩余额度与重置机会。",
-    "refresh_all": "刷新全部",
     "refreshing": "刷新中",
     "updated": "{{time}}更新",
     "empty": "没有可查询额度的凭据",
@@ -36,7 +35,11 @@
     "search_placeholder": "搜索账号、备注、渠道",
     "no_match": "没有匹配的账号",
     "remaining": "剩余 {{percent}}%",
-    "reset_at": "{{time}} 重置"
+    "reset_at": "{{time}} 重置",
+    "page_summary": "第 {{from}}–{{to}} 条，共 {{total}} 条",
+    "per_page": "{{count}} 条/页",
+    "page_size_label": "每页条数",
+    "refresh_page": "刷新本页"
   },
   "window": {
     "five_hour": "5 小时",
@@ -86,16 +89,22 @@
   "view": {
     "label": "视图切换",
     "cards": "卡片视图",
-    "calendar": "重置日历"
+    "timeline": "时间线"
   },
-  "calendar": {
-    "title": "重置窗口",
-    "desc": "按周查看各账号额度窗口的重置时间。",
-    "prev": "上一周",
-    "next": "下一周",
-    "today": "回到本周",
-    "empty_day": "无重置",
-    "no_events": "本周没有可用的重置时间",
-    "event_remaining": "剩余 {{percent}}%"
+  "timeline": {
+    "title": "额度时间线",
+    "desc": "按日期展开各账号的额度窗口，直观看到容量何时恢复。",
+    "mode_label": "时间范围",
+    "mode_weekly": "14 天",
+    "mode_session": "5 小时",
+    "prev": "上一段",
+    "next": "下一段",
+    "today": "回到当前",
+    "credential": "账号",
+    "empty": "当前页没有可绘制的额度窗口，试试切换分页或卡片视图。",
+    "empty_session": "当前页没有 5 小时额度窗口，试试切换分页或卡片视图。",
+    "remaining": "剩余 {{percent}}%",
+    "unknown": "剩余未知",
+    "hint": "仅展示可推断窗口周期的额度；其他额度请查看卡片视图。"
   }
 }

@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } f
 import type { TFunction } from "i18next";
 import {
   AlertTriangle,
-  CalendarDays,
+  ChartGantt,
   ChevronLeft,
   ChevronRight,
   KeyRound,
@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { KeyDialog } from "@/components/key-dialog";
 import { LanguageToggle } from "@/components/language-toggle";
 import { Logo } from "@/components/logo";
-import { ResetCalendar } from "@/components/reset-calendar";
+import { QuotaTimeline } from "@/components/quota-timeline";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   AlertDialog,
@@ -32,6 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -52,7 +53,7 @@ import { bucketLabel, bucketTone, credentialName, detailText, providerLabel } fr
 import { cn } from "@/lib/utils";
 import type { Credential, QuotaBucket, QuotaGroup, QuotaMetric, QuotaResponse } from "@/types";
 
-const PAGE_SIZE = 12;
+const DEFAULT_PAGE_SIZE = 12;
 const RESET_PROVIDERS = new Set(["claude", "codex"]);
 
 function metricText(metric: QuotaMetric, t: TFunction): string {
@@ -277,10 +278,11 @@ export function QuotaDashboard() {
   const { key, source, setKey, clear } = useManagementKey();
   const queryClient = useQueryClient();
   const [channel, setChannel] = useState("all");
-  const [view, setView] = useState<"cards" | "calendar">("cards");
+  const [view, setView] = useState<"cards" | "timeline">("cards");
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
-  const filterKey = `${channel}|${deferredSearch}`;
+  const filterKey = `${channel}|${deferredSearch}|${pageSize}`;
   const [pager, setPager] = useState({ filterKey, page: 1 });
   const page = pager.filterKey === filterKey ? pager.page : 1;
   const setPage = (next: number) => setPager({ filterKey, page: next });
@@ -296,8 +298,37 @@ export function QuotaDashboard() {
 
   const quotaCredentials = useMemo(() => (credentials.data ?? []).filter(isQuotaCredential), [credentials.data]);
 
+  const channels = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const credential of quotaCredentials) {
+      const provider = (credential.provider ?? credential.type ?? "").toLowerCase();
+      counts.set(provider, (counts.get(provider) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [quotaCredentials]);
+
+  // 先按渠道/关键字过滤再分页，只为当前页的凭据发起额度查询，
+  // 凭据很多时不会一次打出成百上千个请求。
+  const filteredCredentials = useMemo(() => {
+    const keyword = deferredSearch.trim().toLowerCase();
+    return quotaCredentials
+      .filter((credential) => {
+        const provider = (credential.provider ?? credential.type ?? "").toLowerCase();
+        if (channel !== "all" && provider !== channel) return false;
+        if (!keyword) return true;
+        return [credentialName(credential), credential.provider, credential.label, credential.note]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(keyword));
+      })
+      .sort((a, b) => credentialName(a).localeCompare(credentialName(b)));
+  }, [channel, deferredSearch, quotaCredentials]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredCredentials.length / pageSize));
+  const current = Math.min(page, pageCount);
+  const pageCredentials = filteredCredentials.slice((current - 1) * pageSize, current * pageSize);
+
   const results = useQueries({
-    queries: quotaCredentials.map((credential) => ({
+    queries: pageCredentials.map((credential) => ({
       queryKey: ["quota", keyFingerprint(key), credential.auth_index],
       queryFn: () => fetchQuota(key, credential.auth_index ?? ""),
       enabled: Boolean(key) && Boolean(credential.auth_index),
@@ -308,37 +339,10 @@ export function QuotaDashboard() {
     })),
   });
 
-  const items = useMemo(
-    () => quotaCredentials.map((credential, index) => ({ credential, query: results[index] })),
-    [quotaCredentials, results],
+  const pageItems = useMemo(
+    () => pageCredentials.map((credential, index) => ({ credential, query: results[index] })),
+    [pageCredentials, results],
   );
-
-  const channels = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of items) {
-      const provider = (item.credential.provider ?? item.credential.type ?? "").toLowerCase();
-      counts.set(provider, (counts.get(provider) ?? 0) + 1);
-    }
-    return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [items]);
-
-  const filtered = useMemo(() => {
-    const keyword = deferredSearch.trim().toLowerCase();
-    return items
-      .filter(({ credential }) => {
-        const provider = (credential.provider ?? credential.type ?? "").toLowerCase();
-        if (channel !== "all" && provider !== channel) return false;
-        if (!keyword) return true;
-        return [credentialName(credential), credential.provider, credential.label, credential.note]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(keyword));
-      })
-      .sort((a, b) => credentialName(a.credential).localeCompare(credentialName(b.credential)));
-  }, [channel, deferredSearch, items]);
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const current = Math.min(page, pageCount);
-  const pageItems = filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
 
   const refreshing = results.some((result) => result.isFetching);
   const unauthorized = credentials.error instanceof UnauthorizedError;
@@ -388,7 +392,7 @@ export function QuotaDashboard() {
             disabled={!key || refreshing}
           >
             <RefreshCw className={cn(refreshing && "animate-spin")} />
-            {refreshing ? t("quota.refreshing") : t("quota.refresh_all")}
+            {refreshing ? t("quota.refreshing") : t("quota.refresh_page")}
           </Button>
           <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setKeyOpen(true)}>
             <KeyRound />
@@ -438,7 +442,7 @@ export function QuotaDashboard() {
                 <TabsTrigger value="all" className="gap-1.5 text-xs">
                   {t("common.all")}
                   <span className="rounded-full bg-muted-foreground/15 px-1.5 py-0.5 text-[10px] font-semibold">
-                    {items.length}
+                    {quotaCredentials.length}
                   </span>
                 </TabsTrigger>
                 {channels.map(([provider, count]) => (
@@ -466,7 +470,7 @@ export function QuotaDashboard() {
                 value={[view]}
                 onValueChange={(value) => {
                   const next = value[0];
-                  if (next === "cards" || next === "calendar") setView(next);
+                  if (next === "cards" || next === "timeline") setView(next);
                 }}
                 size="sm"
                 aria-label={t("view.label")}
@@ -481,44 +485,72 @@ export function QuotaDashboard() {
                   <LayoutGrid className="size-3.5" />
                 </ToggleGroupItem>
                 <ToggleGroupItem
-                  value="calendar"
-                  aria-label={t("view.calendar")}
-                  title={t("view.calendar")}
+                  value="timeline"
+                  aria-label={t("view.timeline")}
+                  title={t("view.timeline")}
                   className="size-7 text-muted-foreground aria-pressed:bg-background! aria-pressed:text-foreground aria-pressed:shadow-sm"
                 >
-                  <CalendarDays className="size-3.5" />
+                  <ChartGantt className="size-3.5" />
                 </ToggleGroupItem>
               </ToggleGroup>
             </div>
           </div>
 
-          {filtered.length === 0 ? (
+          {filteredCredentials.length === 0 ? (
             <Card className="grid place-items-center py-12 text-sm text-muted-foreground">{t("quota.no_match")}</Card>
-          ) : view === "calendar" ? (
-            <ResetCalendar items={filtered.map(({ credential, query }) => ({ credential, quota: query.data }))} />
           ) : (
             <>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                {pageItems.map(({ credential, query }) => (
-                  <QuotaCard
-                    key={credential.auth_index ?? credential.id}
-                    credential={credential}
-                    quota={query.data}
-                    pending={query.isPending}
-                    error={query.error instanceof Error ? query.error : null}
-                    fetching={query.isFetching}
-                    onRefresh={() => void query.refetch()}
-                    onReset={() => setResetTarget(credential)}
-                    t={t}
-                  />
-                ))}
-              </div>
+              {view === "timeline" ? (
+                <QuotaTimeline
+                  items={pageItems.map(({ credential, query }) => ({ credential, quota: query.data }))}
+                  loading={pageItems.some(({ query }) => query.isPending)}
+                />
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                  {pageItems.map(({ credential, query }) => (
+                    <QuotaCard
+                      key={credential.auth_index ?? credential.id}
+                      credential={credential}
+                      quota={query.data}
+                      pending={query.isPending}
+                      error={query.error instanceof Error ? query.error : null}
+                      fetching={query.isFetching}
+                      onRefresh={() => void query.refetch()}
+                      onReset={() => setResetTarget(credential)}
+                      t={t}
+                    />
+                  ))}
+                </div>
+              )}
 
-              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <div className="flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
                 <span>
-                  {current} / {pageCount}
+                  {t("quota.page_summary", {
+                    from: filteredCredentials.length === 0 ? 0 : (current - 1) * pageSize + 1,
+                    to: Math.min(current * pageSize, filteredCredentials.length),
+                    total: filteredCredentials.length,
+                  })}
                 </span>
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select
+                    items={[12, 20, 50].map((size) => ({
+                      value: String(size),
+                      label: t("quota.per_page", { count: size }),
+                    }))}
+                    value={String(pageSize)}
+                    onValueChange={(value) => value && setPageSize(Number(value))}
+                  >
+                    <SelectTrigger className="h-7 w-auto min-w-24 text-xs" aria-label={t("quota.page_size_label")}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent align="end">
+                      {[12, 20, 50].map((size) => (
+                        <SelectItem key={size} value={String(size)}>
+                          {t("quota.per_page", { count: size })}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Button
                     variant="outline"
                     size="sm"
@@ -529,6 +561,9 @@ export function QuotaDashboard() {
                     <ChevronLeft className="size-3.5" />
                     {t("common.previous")}
                   </Button>
+                  <span className="min-w-10 text-center tabular-nums">
+                    {current} / {pageCount}
+                  </span>
                   <Button
                     variant="outline"
                     size="sm"
