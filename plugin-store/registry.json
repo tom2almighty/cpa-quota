@@ -4,17 +4,18 @@
     {
       "id": "cpa-quota",
       "name": "CPA Quota",
-      "description": "CLIProxyAPI 额度查询插件，通过 v8 QuotaProvider 为 Claude、Codex、Antigravity、Kimi、xAI、Devin、Meta 提供统一额度视图。",
+      "description": "CPA 额度监控：实现 v8 QuotaProvider，统一查询 Claude、Codex、Antigravity、Kimi、xAI、Devin、Meta 的额度与重置窗口，并内置额度看板。 / CLIProxyAPI quota monitor: implements the v8 QuotaProvider for Claude, Codex, Antigravity, Kimi, xAI, Devin and Meta, with normalized quota windows and an embedded dashboard.",
       "author": "tom2almighty",
       "repository": "https://github.com/tom2almighty/cpa-quota",
       "logo": "https://raw.githubusercontent.com/tom2almighty/cpa-quota/main/assets/logo.svg",
       "homepage": "https://github.com/tom2almighty/cpa-quota",
       "license": "AGPL-3.0",
       "tags": [
-        "quota",
-        "billing",
-        "provider",
-        "dashboard"
+        "Quota",
+        "Management",
+        "Claude",
+        "Codex",
+        "Antigravity"
       ]
     }
   ]
