@@ -93,7 +93,7 @@ function BucketRow({ bucket, t }: { bucket: QuotaBucket; t: TFunction }) {
               >
                 {detailText(bucket.description)}
               </TooltipTrigger>
-              <TooltipContent className="max-w-xs break-words">{detailText(bucket.description)}</TooltipContent>
+              <TooltipContent className="max-w-xs warp-break-words">{detailText(bucket.description)}</TooltipContent>
             </Tooltip>
           )}
         </div>
@@ -231,7 +231,7 @@ function QuotaCard({
         ) : error ? (
           <div className="rounded-md bg-destructive/10 p-2.5 text-xs text-destructive">
             <p className="font-medium">{t("quota.query_failed")}</p>
-            <p className="mt-1 break-words opacity-90">{error.message}</p>
+            <p className="mt-1 warp-break-words opacity-90">{error.message}</p>
             <Button variant="outline" size="sm" className="mt-2 h-6 text-xs" onClick={onRefresh}>
               {t("common.retry")}
             </Button>
