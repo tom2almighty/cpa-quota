@@ -8,7 +8,7 @@ CLIProxyAPI（CPA 8.0+）额度插件：实现 v8 `QuotaProvider`，统一查询
 
 插件在服务端查询各厂商额度，归一化为 v8 的 `subscription / summary / groups[].buckets[]` 结构。CPA 通过 `/v8/management/plugins/cpa-quota/quota` 提供查询与重置，面板只负责渲染，不再维护厂商适配。
 
-看板提供卡片与按周重置日历两种视图，支持渠道筛选、搜索和额度重置。
+看板提供卡片与额度时间线视图；时间线支持月、14 天和 5 小时三种跨度，并支持渠道筛选、搜索和额度重置。
 
 ## 开发环境配置
 

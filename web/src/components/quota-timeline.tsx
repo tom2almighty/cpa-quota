@@ -17,7 +17,7 @@ import {
 } from "@/lib/quota-ui";
 import { cn } from "@/lib/utils";
 
-type Mode = "weekly" | "session";
+type Mode = "monthly" | "weekly" | "session";
 
 const WEEK_DAYS = 14;
 const SESSION_DAYS = 3;
@@ -42,13 +42,30 @@ function addDays(date: Date, days: number): Date {
   return next;
 }
 
+function startOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addMonths(date: Date, months: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + months, 1);
+}
+
+function daysInMonth(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+}
+
 function spanFor(mode: Mode, offset: number, now: Date) {
+  if (mode === "monthly") {
+    const start = addMonths(startOfMonth(now), offset);
+    const days = daysInMonth(start);
+    return { start, end: addMonths(start, 1), cellCount: days };
+  }
   if (mode === "weekly") {
     const start = addDays(startOfWeek(now), offset * 7);
-    return { start, end: addDays(start, WEEK_DAYS), days: WEEK_DAYS };
+    return { start, end: addDays(start, WEEK_DAYS), cellCount: WEEK_DAYS };
   }
   const start = addDays(startOfDay(now), offset);
-  return { start, end: addDays(start, SESSION_DAYS), days: SESSION_DAYS };
+  return { start, end: addDays(start, SESSION_DAYS), cellCount: SESSION_CELLS };
 }
 
 function formatDate(date: Date, locale: string): string {
@@ -213,26 +230,35 @@ export function QuotaTimeline({ items, loading = false }: { items: QuotaViewItem
     [items, mode, now, spanEnd, spanHours, spanStart],
   );
 
-  const cellCount = mode === "session" ? SESSION_CELLS : WEEK_DAYS;
   const cells = useMemo(() => {
-    const cellMs = (spanEnd - spanStart) / cellCount;
+    const cellMs = (spanEnd - spanStart) / span.cellCount;
     const todayStart = startOfDay(new Date(now)).getTime();
-    return Array.from({ length: cellCount }, (_, index) => {
-      const at = new Date(spanStart + index * cellMs);
-      const isDayStart = mode === "weekly" || at.getHours() === 0;
+    return Array.from({ length: span.cellCount }, (_, index) => {
+      // 月视图按日历日推进，避免夏令时切换时按固定毫秒切片造成日期漂移
+      const at = mode === "monthly" ? addDays(span.start, index) : new Date(spanStart + index * cellMs);
+      const isDayStart = mode !== "session" || at.getHours() === 0;
       return {
         key: `${at.getTime()}`,
         at,
         isDayStart,
         isToday: startOfDay(at).getTime() === todayStart,
         isWeekend: at.getDay() === 0 || at.getDay() === 6,
-        label: isDayStart ? formatDate(at, locale) : formatTime(at, locale),
+        // 月视图一天一格，只显示日号；周视图显示月/日，5 小时视图显示时间
+        label:
+          mode === "monthly"
+            ? new Intl.DateTimeFormat(locale, { day: "2-digit" }).format(at)
+            : isDayStart
+              ? formatDate(at, locale)
+              : formatTime(at, locale),
         weekday: new Intl.DateTimeFormat(locale, { weekday: "short" }).format(at),
       };
     });
-  }, [cellCount, locale, mode, now, spanEnd, spanStart]);
+  }, [locale, mode, now, span.cellCount, span.start, spanEnd, spanStart]);
 
-  const rangeLabel = `${formatDate(span.start, locale)} – ${formatDate(addDays(span.end, -1), locale)}`;
+  const rangeLabel =
+    mode === "monthly"
+      ? new Intl.DateTimeFormat(locale, { year: "numeric", month: "long" }).format(span.start)
+      : `${formatDate(span.start, locale)} – ${formatDate(addDays(span.end, -1), locale)}`;
   const empty = lanes.length === 0;
 
   return (
@@ -247,7 +273,7 @@ export function QuotaTimeline({ items, loading = false }: { items: QuotaViewItem
             value={[mode]}
             onValueChange={(value) => {
               const next = value[0];
-              if (next !== "weekly" && next !== "session") return;
+              if (next !== "monthly" && next !== "weekly" && next !== "session") return;
               setMode(next);
               setOffset(0);
             }}
@@ -255,6 +281,12 @@ export function QuotaTimeline({ items, loading = false }: { items: QuotaViewItem
             aria-label={t("timeline.mode_label")}
             className="bg-muted/60 p-0.5"
           >
+            <ToggleGroupItem
+              value="monthly"
+              className="h-7 px-2 text-xs text-muted-foreground aria-pressed:bg-background! aria-pressed:text-foreground aria-pressed:shadow-sm"
+            >
+              {t("timeline.mode_monthly")}
+            </ToggleGroupItem>
             <ToggleGroupItem
               value="weekly"
               className="h-7 px-2 text-xs text-muted-foreground aria-pressed:bg-background! aria-pressed:text-foreground aria-pressed:shadow-sm"
@@ -303,11 +335,15 @@ export function QuotaTimeline({ items, loading = false }: { items: QuotaViewItem
         </div>
       ) : empty ? (
         <div className="rounded-lg border bg-card py-8 text-center text-xs text-muted-foreground">
-          {mode === "session" ? t("timeline.empty_session") : t("timeline.empty")}
+          {mode === "session"
+            ? t("timeline.empty_session")
+            : mode === "monthly"
+              ? t("timeline.empty_month")
+              : t("timeline.empty")}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border bg-card">
-          <div className="min-w-160">
+          <div className={mode === "monthly" ? "min-w-200" : "min-w-160"}>
             <div className="flex border-b bg-muted/20">
               <div className="w-48 shrink-0 border-r px-3 py-2 text-xs font-medium text-muted-foreground">
                 {t("timeline.credential")}
@@ -317,7 +353,8 @@ export function QuotaTimeline({ items, loading = false }: { items: QuotaViewItem
                   <div
                     key={cell.key}
                     className={cn(
-                      "flex-1 border-r border-border/40 px-1 py-1.5 text-center last:border-r-0",
+                      "flex-1 border-r border-border/40 text-center last:border-r-0",
+                      mode === "monthly" ? "px-0.5 py-1" : "px-1 py-1.5",
                       cell.isToday && "bg-primary/5",
                       cell.isWeekend && !cell.isToday && "bg-muted/20",
                     )}

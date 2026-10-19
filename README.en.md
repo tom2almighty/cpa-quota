@@ -8,7 +8,7 @@ CLIProxyAPI (CPA 8.0+) quota plugin: implements the v8 `QuotaProvider` for Claud
 
 The plugin queries each provider on the server and normalizes the result into the v8 `subscription / summary / groups[].buckets[]` shape. CPA serves it through `/v8/management/plugins/cpa-quota/quota`, so the dashboard only renders data and carries no provider-specific quota logic.
 
-The dashboard provides card and weekly reset-calendar views, with provider filters, search, and quota reset.
+The dashboard provides card and quota-timeline views; the timeline supports monthly, 14-day and 5-hour spans, with provider filters, search, and quota reset.
 
 ## Development
 
