@@ -2,11 +2,13 @@
 
 [English](README.en.md)
 
-CLIProxyAPI（CPA 8.0+）额度查询插件：通过 v8 `QuotaProvider` 暴露 Claude、Codex、Antigravity、Kimi、xAI、Devin、Meta 的统一额度数据，并内置额度监控页面。
+CLIProxyAPI（CPA 8.0+）额度插件：实现 v8 `QuotaProvider`，统一查询 Claude、Codex、Antigravity、Kimi、xAI、Devin、Meta 的额度与重置窗口，并内置额度看板。
 
 ## 项目简介
 
-插件在服务端调用各厂商额度接口，把结果归一化为 v8 的 `subscription / summary / groups[].buckets[]` 结构；CPA 通过 `/v8/management/plugins/cpa-quota/quota` 对外提供查询与重置，管理面板只负责渲染，不再维护厂商适配。
+插件在服务端查询各厂商额度，归一化为 v8 的 `subscription / summary / groups[].buckets[]` 结构。CPA 通过 `/v8/management/plugins/cpa-quota/quota` 提供查询与重置，面板只负责渲染，不再维护厂商适配。
+
+看板提供卡片与按周重置日历两种视图，支持渠道筛选、搜索和额度重置。
 
 ## 开发环境配置
 
@@ -27,6 +29,8 @@ go test ./...                            # 后端测试
 
 ### 插件商店安装
 
+插件收录到官方插件商店后，在管理中心搜索 `CPA Quota` 安装。也可以在 CPA 中添加本仓库的商店源：
+
 ```yaml
 plugins:
   enabled: true
@@ -38,23 +42,21 @@ plugins:
       enabled: true
 ```
 
-在管理中心插件商店搜索 `CPA Quota` 安装并启用。
-
 ### 手动安装
 
-从 Releases 下载对应平台的压缩包，解压后把 `cpa-quota.so`（Linux）/ `.dylib`（macOS）/ `.dll`（Windows）放入 CPA 的 `plugins` 目录。
+从 [Releases](https://github.com/tom2almighty/cpa-quota/releases) 下载对应平台的压缩包，解压后把 `cpa-quota.so`（Linux）/ `.dylib`（macOS）/ `.dll`（Windows）放入 CPA 的 `plugins` 目录。
 
 ### 本地打包
 
 ```bash
-./scripts/package-release.sh 1.0.0
+./scripts/package-release.sh 0.0.2
 ```
 
 产物写入 `release-dist/`，包含平台压缩包与 `checksums.txt`。
 
 ### 使用
 
-插件启用后，在管理中心插件列表打开「额度监控」。页面通过 CPA v8 管理 API 读取凭据与额度，管理密钥优先复用 cpa-dashboard / 官方管理中心的本地保存值，也可以手动输入。
+在管理中心插件列表打开「额度监控」。页面通过 CPA v8 管理 API 读取凭据与额度，管理密钥优先复用 cpa-dashboard / 官方管理中心保存的值，也可以手动输入。
 
 支持渠道：
 
