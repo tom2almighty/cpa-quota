@@ -1,0 +1,86 @@
+{
+  "common": {
+    "refresh": "Refresh",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "all": "All",
+    "unknown": "Unknown",
+    "previous": "Previous",
+    "next": "Next"
+  },
+  "theme": {
+    "title": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
+  "language": {
+    "title": "Language"
+  },
+  "quota": {
+    "title": "Quota Monitor",
+    "subtitle": "Remaining quota and reset opportunities via the CPA v8 plugin quota API.",
+    "refresh_all": "Refresh all",
+    "refreshing": "Refreshing",
+    "updated": "Updated {{time}}",
+    "empty": "No credentials expose quota",
+    "empty_hint": "Make sure the cpa-quota plugin is enabled and at least one supported OAuth credential exists.",
+    "load_failed": "Failed to load credentials: {{message}}",
+    "query_failed": "Quota query failed",
+    "no_details": "Upstream returned no quota details",
+    "reset": "Reset quota",
+    "reset_confirm_title": "Reset quota",
+    "reset_confirm_desc": "This attempts to reset quota for {{name}} and may consume an upstream reset opportunity. Continue?",
+    "reset_done": "Quota reset",
+    "reset_failed": "Reset failed: {{message}}",
+    "search_placeholder": "Search accounts, notes, providers",
+    "no_match": "No matching accounts",
+    "remaining": "{{percent}}% left",
+    "reset_at": "Resets {{time}}"
+  },
+  "window": {
+    "five_hour": "5 hour",
+    "weekly": "Weekly",
+    "daily": "Daily",
+    "monthly": "Monthly",
+    "session": "Session",
+    "extra_usage": "Extra usage",
+    "on_demand": "Pay as you go",
+    "current_period": "Current period",
+    "code_review": "Code review",
+    "credits": "Credits",
+    "reset_grants": "Reset grants",
+    "reset_credits": "Reset credits"
+  },
+  "summary": {
+    "disabled": "Disabled",
+    "unlimited": "Unlimited",
+    "times": "times"
+  },
+  "key": {
+    "title": "Management key",
+    "desc": "This page reads data through the CPA v8 management API and needs a management key.",
+    "connected": "Connected",
+    "source": {
+      "own": "Saved on this page",
+      "panel": "cpa-dashboard",
+      "center": "Official Management Center"
+    },
+    "status": "{{state}} · source: {{source}}",
+    "label": "Management key",
+    "placeholder": "Enter the management key",
+    "show": "Show key",
+    "hide": "Hide key",
+    "clear": "Clear",
+    "save": "Save",
+    "ban_hint": "Five consecutive authentication failures temporarily ban the IP. The page never sends requests without a key.",
+    "missing": "No management key configured",
+    "invalid": "Invalid or missing management key"
+  },
+  "detail": {
+    "group_models": "Models within this group: {{models}}",
+    "weekly_depleted": "Weekly limit exhausted",
+    "hours_window": "{{n}} hour window",
+    "minutes_window": "{{n}} min window"
+  }
+}
