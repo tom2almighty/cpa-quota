@@ -43,6 +43,13 @@
   },
   "window": {
     "five_hour": "5 hour",
+    "seven_day": "Weekly",
+    "seven_day_opus": "Weekly Opus",
+    "seven_day_sonnet": "Weekly Sonnet",
+    "seven_day_oauth_apps": "Weekly OAuth apps",
+    "seven_day_cowork": "Weekly Cowork",
+    "seven_day_fable": "Weekly Fable",
+    "cloud_session_credits": "Cloud session credits",
     "weekly": "Weekly",
     "daily": "Daily",
     "monthly": "Monthly",

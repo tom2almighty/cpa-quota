@@ -65,6 +65,11 @@ func (claudeProvider) Fetch(ctx *Context) (model.QuotaFetchResponse, error) {
 	group := &response.Groups[0]
 
 	for _, window := range claudeWindows {
+		// Fable moved to the newer limits[] block; the legacy
+		// iguana_necktie window is handled separately below.
+		if window.key == "iguana_necktie" {
+			continue
+		}
 		record, ok := usage[window.key].(map[string]any)
 		if !ok {
 			continue
@@ -79,6 +84,7 @@ func (claudeProvider) Fetch(ctx *Context) (model.QuotaFetchResponse, error) {
 			ResetTime:         isoFromAny(record["resets_at"]),
 		})
 	}
+	appendClaudeFableBuckets(group, usage)
 
 	if extra, ok := usage["extra_usage"].(map[string]any); ok && extra["is_enabled"] == true {
 		used, _ := mapNumber(extra["used_credits"])
@@ -104,43 +110,10 @@ func (claudeProvider) Fetch(ctx *Context) (model.QuotaFetchResponse, error) {
 			continue
 		}
 		record, ok := value.(map[string]any)
-		if !ok {
+		if !ok || !claudeDollarWindow(record) {
 			continue
 		}
-		if _, hasLimit := record["limit_dollars"]; !hasLimit {
-			if _, hasUsed := record["used_dollars"]; !hasUsed {
-				if _, hasRemaining := record["remaining_dollars"]; !hasRemaining {
-					continue
-				}
-			}
-		}
-		limit, _ := mapNumber(record["limit_dollars"])
-		used, _ := mapNumber(record["used_dollars"])
-		remaining, hasRemaining := mapNumber(record["remaining_dollars"])
-		percent, okPercent := mapNumber(record["utilization"])
-		if !okPercent {
-			switch {
-			case limit > 0 && hasRemaining:
-				percent = (limit - remaining) / limit * 100
-			case limit > 0:
-				percent = used / limit * 100
-			}
-		}
-		description := ""
-		switch {
-		case limit > 0 && used > 0:
-			description = fmt.Sprintf("$%.2f / $%.2f", used, limit)
-		case limit > 0 && hasRemaining:
-			description = fmt.Sprintf("$%.2f / $%.2f", limit-remaining, limit)
-		case hasRemaining:
-			description = fmt.Sprintf("$%.2f remaining", remaining)
-		}
-		group.Buckets = append(group.Buckets, model.QuotaBucket{
-			Window:            key,
-			RemainingFraction: remainingFromUsedPercent(percent),
-			ResetTime:         isoFromAny(record["resets_at"]),
-			Description:       description,
-		})
+		appendClaudeDollarBucket(group, key, record)
 	}
 
 	if grants, ok := fetchClaudeGrantStatus(ctx, token); ok {
@@ -159,6 +132,104 @@ func (claudeProvider) Fetch(ctx *Context) (model.QuotaFetchResponse, error) {
 	}
 
 	return response, nil
+}
+
+// appendClaudeFableBuckets resolves the Fable weekly limit and the legacy
+// iguana_necktie window. Newer usage payloads expose Fable through limits[]
+// with kind weekly_scoped; iguana_necktie can also be a dollar-denominated
+// cloud session credit pool instead of a percentage window.
+func appendClaudeFableBuckets(group *model.QuotaGroup, usage map[string]any) {
+	iguana, hasIguana := usage["iguana_necktie"].(map[string]any)
+	if hasIguana && claudeDollarWindow(iguana) {
+		appendClaudeDollarBucket(group, "cloud_session_credits", iguana)
+		hasIguana = false
+	}
+
+	percent, reset, ok := claudeFableLimit(usage)
+	if !ok && hasIguana {
+		percent, ok = mapNumber(iguana["utilization"])
+		reset = iguana["resets_at"]
+	}
+	if !ok {
+		return
+	}
+	group.Buckets = append(group.Buckets, model.QuotaBucket{
+		Window:            "seven_day_fable",
+		RemainingFraction: remainingFromUsedPercent(percent),
+		ResetTime:         isoFromAny(reset),
+	})
+}
+
+// claudeFableLimit reads limits[] and prefers the active weekly_scoped Fable
+// entry, falling back to the first matching entry.
+func claudeFableLimit(usage map[string]any) (float64, any, bool) {
+	var fallbackPercent float64
+	var fallbackReset any
+	hasFallback := false
+	for _, raw := range getArray(usage, "limits") {
+		record, ok := raw.(map[string]any)
+		if !ok || !strings.EqualFold(asString(record["kind"]), "weekly_scoped") {
+			continue
+		}
+		scope, _ := record["scope"].(map[string]any)
+		model, _ := scope["model"].(map[string]any)
+		name := strings.ToLower(strings.TrimSpace(asString(model["display_name"])))
+		if name != "fable" && name != "fable 5" {
+			continue
+		}
+		percent, okPercent := mapNumber(record["percent"])
+		if !okPercent {
+			continue
+		}
+		if record["is_active"] == true {
+			return percent, record["resets_at"], true
+		}
+		if !hasFallback {
+			fallbackPercent, fallbackReset, hasFallback = percent, record["resets_at"], true
+		}
+	}
+	return fallbackPercent, fallbackReset, hasFallback
+}
+
+// claudeDollarWindow reports whether a window carries dollar balances instead
+// of a utilization percentage.
+func claudeDollarWindow(record map[string]any) bool {
+	for _, key := range []string{"limit_dollars", "used_dollars", "remaining_dollars"} {
+		if _, ok := mapNumber(record[key]); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func appendClaudeDollarBucket(group *model.QuotaGroup, key string, record map[string]any) {
+	limit, _ := mapNumber(record["limit_dollars"])
+	used, _ := mapNumber(record["used_dollars"])
+	remaining, hasRemaining := mapNumber(record["remaining_dollars"])
+	percent, okPercent := mapNumber(record["utilization"])
+	if !okPercent {
+		switch {
+		case limit > 0 && hasRemaining:
+			percent = (limit - remaining) / limit * 100
+		case limit > 0:
+			percent = used / limit * 100
+		}
+	}
+	description := ""
+	switch {
+	case limit > 0 && used > 0:
+		description = fmt.Sprintf("$%.2f / $%.2f", used, limit)
+	case limit > 0 && hasRemaining:
+		description = fmt.Sprintf("$%.2f / $%.2f", limit-remaining, limit)
+	case hasRemaining:
+		description = fmt.Sprintf("$%.2f remaining", remaining)
+	}
+	group.Buckets = append(group.Buckets, model.QuotaBucket{
+		Window:            key,
+		RemainingFraction: remainingFromUsedPercent(percent),
+		ResetTime:         isoFromAny(record["resets_at"]),
+		Description:       description,
+	})
 }
 
 func (claudeProvider) Reset(ctx *Context) (model.QuotaResetResponse, error) {

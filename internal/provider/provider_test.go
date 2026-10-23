@@ -134,6 +134,56 @@ func TestClaudeFetch(t *testing.T) {
 	}
 }
 
+func TestClaudeFetchPrefersFableLimit(t *testing.T) {
+	ctx := contextFor(t, "claude", `{"access_token":"tok"}`, map[string]fakeResponse{
+		claudeUsageURL: {
+			status: 200,
+			body: `{
+				"five_hour":{"utilization":10,"resets_at":"2026-09-24T05:00:00Z"},
+				"limits":[{"kind":"weekly_scoped","is_active":true,"percent":30,"resets_at":"2026-09-30T00:00:00Z",
+					"scope":{"model":{"display_name":"Fable"}}}],
+				"iguana_necktie":{"utilization":99,"resets_at":"2026-10-01T00:00:00Z"}
+			}`,
+		},
+	})
+	response, err := claudeProvider{}.Fetch(ctx)
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if bucket := findBucket(response.Groups[0], "seven_day_fable"); bucket == nil || !near(bucket.RemainingFraction, 0.7) {
+		t.Fatalf("fable bucket = %#v", bucket)
+	}
+}
+
+func TestClaudeFetchCloudSessionCredits(t *testing.T) {
+	ctx := contextFor(t, "claude", `{"access_token":"tok"}`, map[string]fakeResponse{
+		claudeUsageURL: {
+			status: 200,
+			body: `{
+				"five_hour":{"utilization":10,"resets_at":"2026-09-24T05:00:00Z"},
+				"iguana_necktie":{"limit_dollars":100,"used_dollars":5.043595,"remaining_dollars":94.956405,
+					"utilization":5.043595,"resets_at":"2026-11-01T00:00:00Z"},
+				"additional_credit_balance":{"limit_dollars":20,"used_dollars":0,"remaining_dollars":20,
+					"utilization":0,"resets_at":null}
+			}`,
+		},
+	})
+	response, err := claudeProvider{}.Fetch(ctx)
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	bucket := findBucket(response.Groups[0], "cloud_session_credits")
+	if bucket == nil || !near(bucket.RemainingFraction, 0.94956405) || bucket.Description != "$5.04 / $100.00" {
+		t.Fatalf("cloud session credits bucket = %#v", bucket)
+	}
+	if findBucket(response.Groups[0], "seven_day_fable") != nil {
+		t.Fatalf("dollar-denominated iguana_necktie must not become a Fable window")
+	}
+	if balance := findBucket(response.Groups[0], "additional_credit_balance"); balance == nil || !near(balance.RemainingFraction, 1) {
+		t.Fatalf("additional credit balance = %#v", balance)
+	}
+}
+
 func TestAntigravityFetch(t *testing.T) {
 	ctx := contextFor(t, "antigravity", `{"access_token":"tok","installed":{"project_id":"proj"}}`, map[string]fakeResponse{
 		antigravityQuotaURLs[0]: {

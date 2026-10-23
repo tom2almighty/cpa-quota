@@ -79,7 +79,9 @@ export function windowPeriodHours(window: string | undefined, description?: stri
   if (key.includes("five_hour") || key.includes("five-hour") || key.includes("5h") || key.includes("5_hour")) {
     return 5;
   }
-  if (key.includes("weekly") || key === "week") return 7 * 24;
+  if (key.includes("weekly") || key === "week" || key.includes("seven_day") || key.includes("seven-day")) {
+    return 7 * 24;
+  }
   if (key.includes("monthly") || key === "month") return 30 * 24;
   if (key === "daily" || key === "day") return 24;
   const hours = key.match(/^hours?_(\d+(?:\.\d+)?)$/);

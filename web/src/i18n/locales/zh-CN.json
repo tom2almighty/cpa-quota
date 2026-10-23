@@ -43,6 +43,13 @@
   },
   "window": {
     "five_hour": "5 小时",
+    "seven_day": "每周",
+    "seven_day_opus": "每周 Opus",
+    "seven_day_sonnet": "每周 Sonnet",
+    "seven_day_oauth_apps": "每周 OAuth 应用",
+    "seven_day_cowork": "每周 Cowork",
+    "seven_day_fable": "每周 Fable",
+    "cloud_session_credits": "云会话额度",
     "weekly": "每周",
     "daily": "每日",
     "monthly": "每月",
