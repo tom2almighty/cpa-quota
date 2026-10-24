@@ -3,6 +3,7 @@ package provider
 import (
 	"encoding/json"
 	"math"
+	"net/http"
 	"testing"
 
 	"cpa-quota/internal/hostapi"
@@ -16,17 +17,32 @@ type fakeResponse struct {
 	body   string
 }
 
+type capturedCall struct {
+	method string
+	header http.Header
+}
+
 func fakeClient(t *testing.T, routes map[string]fakeResponse) *hostapi.Client {
+	t.Helper()
+	return fakeClientCapture(t, routes, nil)
+}
+
+func fakeClientCapture(t *testing.T, routes map[string]fakeResponse, captured map[string]capturedCall) *hostapi.Client {
 	t.Helper()
 	call := func(method string, payload []byte) ([]byte, error) {
 		if method != "host.http.do" {
 			t.Fatalf("unexpected host method %s", method)
 		}
 		var request struct {
-			URL string `json:"url"`
+			Method  string              `json:"method"`
+			URL     string              `json:"url"`
+			Headers map[string][]string `json:"headers"`
 		}
 		if err := json.Unmarshal(payload, &request); err != nil {
 			t.Fatalf("decode host request: %v", err)
+		}
+		if captured != nil {
+			captured[request.URL] = capturedCall{method: request.Method, header: http.Header(request.Headers)}
 		}
 		response, ok := routes[request.URL]
 		if !ok {
@@ -48,6 +64,19 @@ func fakeClient(t *testing.T, routes map[string]fakeResponse) *hostapi.Client {
 func contextFor(t *testing.T, provider, auth string, routes map[string]fakeResponse) *Context {
 	t.Helper()
 	return NewContext("idx", provider, []byte(auth), nil, nil, fakeClient(t, routes))
+}
+
+func contextForCapture(t *testing.T, provider, auth string, attributes map[string]string, routes map[string]fakeResponse, captured map[string]capturedCall) *Context {
+	t.Helper()
+	return NewContext("idx", provider, []byte(auth), nil, attributes, fakeClientCapture(t, routes, captured))
+}
+
+func codexRoutes() map[string]fakeResponse {
+	return map[string]fakeResponse{
+		codexUsageURL:        {status: 200, body: `{"plan_type":"plus","rate_limit":{"primary_window":{"used_percent":10,"limit_window_seconds":18000,"reset_after_seconds":600}}}`},
+		codexResetCreditsURL: {status: 200, body: `{"available_count":1}`},
+		codexResetConsumeURL: {status: 200, body: `{"code":"reset"}`},
+	}
 }
 
 func findBucket(group model.QuotaGroup, window string) *model.QuotaBucket {
@@ -93,6 +122,71 @@ func TestCodexFetch(t *testing.T) {
 	}
 	if len(response.Summary) != 2 {
 		t.Fatalf("summary = %#v", response.Summary)
+	}
+}
+
+func TestCodexFetchUsesSIWC(t *testing.T) {
+	captured := map[string]capturedCall{}
+	ctx := contextForCapture(t, "codex",
+		`{"access_token":"outer","account_id":"outer-acc","use_siwc":true,"siwc":{"access_token":"siwc-token"}}`,
+		nil, codexRoutes(), captured)
+	if _, err := (codexProvider{}).Fetch(ctx); err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	usage := captured[codexUsageURL]
+	if got := usage.header.Get("Authorization"); got != "Bearer siwc-token" {
+		t.Fatalf("usage authorization = %q", got)
+	}
+	if got := usage.header.Get("Chatgpt-Account-Id"); got != "" {
+		t.Fatalf("usage account header = %q", got)
+	}
+	resetCredits := captured[codexResetCreditsURL]
+	if got := resetCredits.header.Get("Authorization"); got != "Bearer siwc-token" {
+		t.Fatalf("reset credits authorization = %q", got)
+	}
+	if got := resetCredits.header.Get("Originator"); got != "" {
+		t.Fatalf("reset credits originator = %q", got)
+	}
+
+	if _, err := (codexProvider{}).Reset(ctx); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	consume := captured[codexResetConsumeURL]
+	if consume.method != http.MethodPost || consume.header.Get("Authorization") != "Bearer siwc-token" {
+		t.Fatalf("consume call = %#v", consume)
+	}
+}
+
+func TestCodexFetchSIWCFallsBackToOuterToken(t *testing.T) {
+	captured := map[string]capturedCall{}
+	ctx := contextForCapture(t, "codex",
+		`{"access_token":"outer","account_id":"outer-acc","use_siwc":true}`,
+		nil, codexRoutes(), captured)
+	if _, err := (codexProvider{}).Fetch(ctx); err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	usage := captured[codexUsageURL]
+	if got := usage.header.Get("Authorization"); got != "Bearer outer" {
+		t.Fatalf("usage authorization = %q", got)
+	}
+	if got := usage.header.Get("Chatgpt-Account-Id"); got != "outer-acc" {
+		t.Fatalf("usage account header = %q", got)
+	}
+	if got := captured[codexResetCreditsURL].header.Get("Originator"); got != "Codex Desktop" {
+		t.Fatalf("reset credits originator = %q", got)
+	}
+}
+
+func TestCodexFetchSIWCFromAttributes(t *testing.T) {
+	captured := map[string]capturedCall{}
+	ctx := contextForCapture(t, "codex",
+		`{"access_token":"outer","account_id":"outer-acc","siwc":{"access_token":"siwc-token"}}`,
+		map[string]string{"use_siwc": "true"}, codexRoutes(), captured)
+	if _, err := (codexProvider{}).Fetch(ctx); err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if got := captured[codexUsageURL].header.Get("Authorization"); got != "Bearer siwc-token" {
+		t.Fatalf("usage authorization = %q", got)
 	}
 }
 

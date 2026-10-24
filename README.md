@@ -61,7 +61,7 @@ plugins:
 支持渠道：
 
 - Claude（含 reset grants）
-- Codex（含 reset credits）
+- Codex（含 reset credits；启用 `use_siwc` 时按 SIWC 凭据分区查询）
 - Antigravity
 - Kimi / Kimi AI
 - xAI

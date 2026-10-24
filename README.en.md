@@ -61,7 +61,7 @@ Open `Quota Monitor` from the Management Center plugin list. The page reads cred
 Supported providers:
 
 - Claude (including reset grants)
-- Codex (including reset credits)
+- Codex (including reset credits; queries the SIWC credential partition when `use_siwc` is enabled)
 - Antigravity
 - Kimi / Kimi AI
 - xAI

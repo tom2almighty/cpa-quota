@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"cpa-quota/internal/model"
@@ -23,16 +24,11 @@ func init() {
 }
 
 func (codexProvider) Fetch(ctx *Context) (model.QuotaFetchResponse, error) {
-	token := firstNonEmpty(
-		lookupString(ctx.Metadata, "access_token", "accessToken"),
-		lookupString(ctx.Auth, "access_token", "accessToken"),
-		lookupString(ctx.Metadata, "token"),
-		ctx.Attributes["api_key"],
-	)
+	token, siwc := codexToken(ctx)
 	if token == "" {
 		return model.QuotaFetchResponse{}, fmt.Errorf("codex credential is missing an access token")
 	}
-	headers := codexHeaders(ctx, token)
+	headers := codexHeaders(ctx, token, siwc)
 	resp, err := ctx.HTTP.Do(http.MethodGet, codexUsageURL, headers, nil)
 	if err != nil {
 		return model.QuotaFetchResponse{}, err
@@ -65,7 +61,7 @@ func (codexProvider) Fetch(ctx *Context) (model.QuotaFetchResponse, error) {
 			response.Summary = append(response.Summary, model.QuotaMetric{Key: "credits", Label: "Credits", Value: balance})
 		}
 	}
-	if count, ok := codexResetCreditCount(ctx, headers); ok {
+	if count, ok := codexResetCreditCount(ctx, headers, siwc); ok {
 		response.Summary = append(response.Summary, model.QuotaMetric{
 			Key:   "reset_credits",
 			Label: "Reset credits",
@@ -77,17 +73,12 @@ func (codexProvider) Fetch(ctx *Context) (model.QuotaFetchResponse, error) {
 }
 
 func (codexProvider) Reset(ctx *Context) (model.QuotaResetResponse, error) {
-	token := firstNonEmpty(
-		lookupString(ctx.Metadata, "access_token", "accessToken"),
-		lookupString(ctx.Auth, "access_token", "accessToken"),
-		lookupString(ctx.Metadata, "token"),
-		ctx.Attributes["api_key"],
-	)
+	token, siwc := codexToken(ctx)
 	if token == "" {
 		return model.QuotaResetResponse{}, fmt.Errorf("codex credential is missing an access token")
 	}
-	headers := codexHeaders(ctx, token)
-	count, ok := codexResetCreditCount(ctx, headers)
+	headers := codexHeaders(ctx, token, siwc)
+	count, ok := codexResetCreditCount(ctx, headers, siwc)
 	if !ok || count <= 0 {
 		return model.QuotaResetResponse{Success: false, Message: "no Codex reset credits available"}, nil
 	}
@@ -113,11 +104,88 @@ func (codexProvider) Reset(ctx *Context) (model.QuotaResetResponse, error) {
 	return model.QuotaResetResponse{Success: true, Message: code}, nil
 }
 
-func codexHeaders(ctx *Context, token string) map[string]string {
+// codexToken returns the access token used for quota calls. With use_siwc
+// enabled, CPA routes non-Codex-client traffic through the nested SIWC
+// partition, so quota follows the same partition when it is available.
+func codexToken(ctx *Context) (string, bool) {
+	if codexUseSIWC(ctx) {
+		if token := codexSIWCToken(ctx); token != "" {
+			return token, true
+		}
+	}
+	return firstNonEmpty(
+		lookupString(ctx.Metadata, "access_token", "accessToken"),
+		lookupString(ctx.Auth, "access_token", "accessToken"),
+		lookupString(ctx.Metadata, "token"),
+		ctx.Attributes["api_key"],
+	), false
+}
+
+func codexUseSIWC(ctx *Context) bool {
+	if parsed, ok := parseBoolValue(ctx.Attributes["use_siwc"]); ok {
+		return parsed
+	}
+	for _, source := range []map[string]any{ctx.Auth, ctx.Metadata} {
+		if source == nil {
+			continue
+		}
+		if parsed, ok := parseBoolValue(source["use_siwc"]); ok {
+			return parsed
+		}
+	}
+	return false
+}
+
+func codexSIWCToken(ctx *Context) string {
+	for _, source := range []map[string]any{ctx.Auth, ctx.Metadata} {
+		if source == nil {
+			continue
+		}
+		section, ok := source["siwc"].(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, key := range []string{"access_token", "access"} {
+			if token := asString(section[key]); token != "" {
+				return token
+			}
+		}
+	}
+	return ""
+}
+
+func parseBoolValue(value any) (bool, bool) {
+	switch typed := value.(type) {
+	case bool:
+		return typed, true
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(typed))
+		if err != nil {
+			return false, false
+		}
+		return parsed, true
+	case float64:
+		return typed != 0, true
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil {
+			return false, false
+		}
+		return parsed != 0, true
+	default:
+		return false, false
+	}
+}
+
+func codexHeaders(ctx *Context, token string, siwc bool) map[string]string {
 	headers := map[string]string{
 		"Authorization": "Bearer " + token,
 		"Content-Type":  "application/json",
 		"User-Agent":    codexUserAgent,
+	}
+	// SIWC requests must not carry the outer ChatGPT account header.
+	if siwc {
+		return headers
 	}
 	accountID := firstNonEmpty(
 		lookupString(ctx.Metadata, "chatgpt_account_id", "chatgptAccountId", "account_id", "accountId"),
@@ -165,14 +233,17 @@ func addCodexLimit(group *model.QuotaGroup, raw any, prefix string, ctx *Context
 	}
 }
 
-func codexResetCreditCount(ctx *Context, headers map[string]string) (int, bool) {
+func codexResetCreditCount(ctx *Context, headers map[string]string, siwc bool) (int, bool) {
 	resetHeaders := make(map[string]string, len(headers)+3)
 	for key, value := range headers {
 		resetHeaders[key] = value
 	}
 	resetHeaders["Accept"] = "application/json"
 	resetHeaders["OpenAI-Beta"] = "codex-1"
-	resetHeaders["Originator"] = "Codex Desktop"
+	// SIWC requests omit the Codex client originator, like the upstream executor.
+	if !siwc {
+		resetHeaders["Originator"] = "Codex Desktop"
+	}
 	resp, err := ctx.HTTP.Do(http.MethodGet, codexResetCreditsURL, resetHeaders, nil)
 	if err != nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return 0, false
