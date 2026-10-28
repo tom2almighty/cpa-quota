@@ -1,4 +1,3 @@
-import { resolveApiBase } from "@/lib/auth";
 import type { Credential, CredentialsResponse, QuotaResetResponse, QuotaResponse } from "@/types";
 
 export const QUOTA_PLUGIN_ID = "cpa-quota";
@@ -21,7 +20,13 @@ async function request<T>(key: string, path: string, init: RequestInit = {}): Pr
   headers.set("Authorization", `Bearer ${key}`);
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
 
-  const res = await fetch(`${resolveApiBase()}${path}`, { ...init, headers });
+  const res = await fetch(path, {
+    ...init,
+    headers,
+    mode: "same-origin",
+    credentials: "same-origin",
+    redirect: "error",
+  });
   if (res.status === 401) throw new UnauthorizedError();
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
