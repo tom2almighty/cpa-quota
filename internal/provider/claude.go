@@ -2,8 +2,10 @@ package provider
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +18,14 @@ const (
 	claudeGrantURL   = "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1"
 	claudeProfileURL = "https://api.anthropic.com/api/oauth/profile"
 	claudeClaimBase  = "https://api.anthropic.com/api/organizations"
+)
+
+var (
+	claudeOrganizationIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	claudeGrantIDPattern        = regexp.MustCompile(`^[a-z0-9_-]{1,40}$`)
+	claudeRequestIDPattern      = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+	errClaudeAuthentication     = errors.New("Claude authentication failed")
+	errClaudeRateLimited        = errors.New("rate limited by Anthropic")
 )
 
 var claudeWindows = []struct {
@@ -116,7 +126,7 @@ func (claudeProvider) Fetch(ctx *Context) (model.QuotaFetchResponse, error) {
 		appendClaudeDollarBucket(group, key, record)
 	}
 
-	if grants, ok := fetchClaudeGrantStatus(ctx, token); ok {
+	if grants, err := fetchClaudeGrantStatus(ctx, token); err == nil {
 		total := 0.0
 		for _, grant := range grants.Grants {
 			total += grant.ResetsLeft
@@ -242,25 +252,45 @@ func (claudeProvider) Reset(ctx *Context) (model.QuotaResetResponse, error) {
 	if token == "" {
 		return model.QuotaResetResponse{}, fmt.Errorf("claude credential is missing an access token")
 	}
-	status, ok := fetchClaudeGrantStatus(ctx, token)
-	if !ok {
-		return model.QuotaResetResponse{Success: false, Message: "no Claude reset grant data available"}, nil
+	status, errStatus := fetchClaudeGrantStatus(ctx, token)
+	if errStatus != nil {
+		switch {
+		case errors.Is(errStatus, errClaudeAuthentication):
+			return model.QuotaResetResponse{Success: false, Message: errClaudeAuthentication.Error()}, nil
+		case errors.Is(errStatus, errClaudeRateLimited):
+			return model.QuotaResetResponse{Success: false, Message: errClaudeRateLimited.Error()}, nil
+		default:
+			return model.QuotaResetResponse{}, fmt.Errorf("read Claude reset grants: %w", errStatus)
+		}
 	}
 	grantID, reason := usableClaudeGrant(status, ctx.Now)
 	if grantID == "" {
 		return model.QuotaResetResponse{Success: false, Message: reason}, nil
 	}
+	if !claudeGrantIDPattern.MatchString(grantID) {
+		return model.QuotaResetResponse{Success: false, Message: "Claude reset grant id is invalid"}, nil
+	}
 
 	profile, errProfile := fetchClaudeProfile(ctx, token)
 	if errProfile != nil {
-		return model.QuotaResetResponse{}, errProfile
+		switch {
+		case errors.Is(errProfile, errClaudeAuthentication):
+			return model.QuotaResetResponse{Success: false, Message: errClaudeAuthentication.Error()}, nil
+		case errors.Is(errProfile, errClaudeRateLimited):
+			return model.QuotaResetResponse{Success: false, Message: errClaudeRateLimited.Error()}, nil
+		default:
+			return model.QuotaResetResponse{}, errProfile
+		}
 	}
-	organization := lookupString(profile, "uuid")
+	organization := claudeOrganization(profile)
 	if organization == "" {
 		return model.QuotaResetResponse{Success: false, Message: "Claude organization id is unavailable"}, nil
 	}
 	key := "claude|" + ctx.AuthIndex + "|" + grantID
 	requestID := resetRequestID(key)
+	if !claudeRequestIDPattern.MatchString(requestID) {
+		return model.QuotaResetResponse{Success: false, Message: "Claude reset request id is invalid"}, nil
+	}
 	body, _ := json.Marshal(map[string]string{
 		"program":    "cedar_ember",
 		"grant_id":   grantID,
@@ -268,12 +298,20 @@ func (claudeProvider) Reset(ctx *Context) (model.QuotaResetResponse, error) {
 	})
 	resp, errClaim := ctx.HTTP.Do(
 		http.MethodPost,
-		fmt.Sprintf("%s/%s/reset_rate_limits", claudeClaimBase, strings.ToLower(organization)),
+		fmt.Sprintf("%s/%s/reset_rate_limits", claudeClaimBase, organization),
 		claudeHeaders(token),
 		body,
 	)
 	if errClaim != nil {
 		return model.QuotaResetResponse{}, errClaim
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		clearResetRequest(key)
+		return model.QuotaResetResponse{Success: false, Message: errClaudeRateLimited.Error()}, nil
+	}
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		clearResetRequest(key)
+		return model.QuotaResetResponse{Success: false, Message: errClaudeAuthentication.Error()}, nil
 	}
 	result := ""
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -286,14 +324,13 @@ func (claudeProvider) Reset(ctx *Context) (model.QuotaResetResponse, error) {
 	case "reset", "already_used":
 		clearResetRequest(key)
 		return model.QuotaResetResponse{Success: true, Message: result}, nil
-	case "rate_limited":
+	case "not_limited", "cooldown", "ineligible", "unavailable":
 		clearResetRequest(key)
-		return model.QuotaResetResponse{Success: false, Message: "rate limited by Anthropic"}, nil
+		return model.QuotaResetResponse{Success: false, Message: result}, nil
 	case "":
 		return model.QuotaResetResponse{Success: false, Message: fmt.Sprintf("Anthropic returned %d", resp.StatusCode)}, nil
 	default:
-		clearResetRequest(key)
-		return model.QuotaResetResponse{Success: false, Message: result}, nil
+		return model.QuotaResetResponse{Success: false, Message: "Anthropic returned an unknown result"}, nil
 	}
 }
 
@@ -310,6 +347,12 @@ func fetchClaudeProfile(ctx *Context, token string) (map[string]any, error) {
 	resp, err := ctx.HTTP.Do(http.MethodGet, claudeProfileURL, claudeHeaders(token), nil)
 	if err != nil {
 		return nil, err
+	}
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, errClaudeAuthentication
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, errClaudeRateLimited
 	}
 	return decodeBody(resp)
 }
@@ -353,18 +396,24 @@ type claudeGrantStatus struct {
 	Grants        []claudeGrant
 }
 
-func fetchClaudeGrantStatus(ctx *Context, token string) (claudeGrantStatus, bool) {
+func fetchClaudeGrantStatus(ctx *Context, token string) (claudeGrantStatus, error) {
 	resp, err := ctx.HTTP.Do(http.MethodGet, claudeGrantURL, claudeHeaders(token), nil)
 	if err != nil {
-		return claudeGrantStatus{}, false
+		return claudeGrantStatus{}, err
+	}
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return claudeGrantStatus{}, errClaudeAuthentication
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return claudeGrantStatus{}, errClaudeRateLimited
 	}
 	payload, errDecode := decodeBody(resp)
 	if errDecode != nil {
-		return claudeGrantStatus{}, false
+		return claudeGrantStatus{}, errDecode
 	}
 	block, ok := payload["cedar_ember"].(map[string]any)
 	if !ok {
-		return claudeGrantStatus{}, false
+		return claudeGrantStatus{}, fmt.Errorf("Claude reset grant data is unavailable")
 	}
 	status := claudeGrantStatus{
 		Eligible:      block["eligible"] == true,
@@ -394,7 +443,19 @@ func fetchClaudeGrantStatus(ctx *Context, token string) (claudeGrantStatus, bool
 			status.Grants = append(status.Grants, grant)
 		}
 	}
-	return status, true
+	return status, nil
+}
+
+func claudeOrganization(profile map[string]any) string {
+	organization := getMap(profile, "organization")
+	if organization == nil {
+		return ""
+	}
+	uuid := strings.ToLower(asString(organization["uuid"]))
+	if !claudeOrganizationIDPattern.MatchString(uuid) {
+		return ""
+	}
+	return uuid
 }
 
 func usableClaudeGrant(status claudeGrantStatus, now time.Time) (string, string) {

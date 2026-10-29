@@ -2,6 +2,7 @@ package provider
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"testing"
@@ -275,6 +276,131 @@ func TestClaudeFetchCloudSessionCredits(t *testing.T) {
 	}
 	if balance := findBucket(response.Groups[0], "additional_credit_balance"); balance == nil || !near(balance.RemainingFraction, 1) {
 		t.Fatalf("additional credit balance = %#v", balance)
+	}
+}
+
+func TestClaudeReset(t *testing.T) {
+	const organization = "00000000-0000-0000-0000-000000000001"
+	claimURL := "https://api.anthropic.com/api/organizations/" + organization + "/reset_rate_limits"
+	captured := map[string]capturedCall{}
+	ctx := contextForCapture(t, "claude", `{"access_token":"tok"}`, nil, map[string]fakeResponse{
+		claudeGrantURL: {
+			status: 200,
+			body:   `{"cedar_ember":{"eligible":true,"at_limit":true,"grants":[{"id":"grant-1","resets_left":1,"usable_now":true}]}}`,
+		},
+		claudeProfileURL: {
+			status: 200,
+			body:   `{"organization":{"uuid":"00000000-0000-0000-0000-000000000001"}}`,
+		},
+		claimURL: {
+			status: 200,
+			body:   `{"result":"reset"}`,
+		},
+	}, captured)
+
+	response, err := (claudeProvider{}).Reset(ctx)
+	if err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if !response.Success || response.Message != "reset" {
+		t.Fatalf("reset response = %#v", response)
+	}
+	claim := captured[claimURL]
+	if claim.method != http.MethodPost || claim.header.Get("Authorization") != "Bearer tok" {
+		t.Fatalf("claim call = %#v", claim)
+	}
+}
+
+func TestClaudeResetStatusFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		message string
+	}{
+		{name: "rate limited", status: http.StatusTooManyRequests, message: "rate limited by Anthropic"},
+		{name: "unauthorized", status: http.StatusUnauthorized, message: "Claude authentication failed"},
+		{name: "forbidden", status: http.StatusForbidden, message: "Claude authentication failed"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := contextFor(t, "claude", `{"access_token":"tok"}`, map[string]fakeResponse{
+				claudeGrantURL: {status: test.status, body: `{}`},
+			})
+			response, err := (claudeProvider{}).Reset(ctx)
+			if err != nil {
+				t.Fatalf("reset: %v", err)
+			}
+			if response.Success || response.Message != test.message {
+				t.Fatalf("reset response = %#v", response)
+			}
+		})
+	}
+}
+
+func TestClaudeResetProfileAuthFailure(t *testing.T) {
+	ctx := contextFor(t, "claude", `{"access_token":"tok"}`, map[string]fakeResponse{
+		claudeGrantURL: {
+			status: 200,
+			body:   `{"cedar_ember":{"eligible":true,"at_limit":true,"grants":[{"id":"grant-1","resets_left":1,"usable_now":true}]}}`,
+		},
+		claudeProfileURL: {status: http.StatusUnauthorized, body: `{}`},
+	})
+	response, err := (claudeProvider{}).Reset(ctx)
+	if err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if response.Success || response.Message != "Claude authentication failed" {
+		t.Fatalf("reset response = %#v", response)
+	}
+}
+
+func TestClaudeResetRejectsMalformedIdentity(t *testing.T) {
+	tests := []struct {
+		name         string
+		grantID      string
+		organization string
+		message      string
+		calls        int
+	}{
+		{
+			name:         "grant id",
+			grantID:      "../grant",
+			organization: "00000000-0000-0000-0000-000000000001",
+			message:      "Claude reset grant id is invalid",
+			calls:        1,
+		},
+		{
+			name:         "organization id",
+			grantID:      "grant-1",
+			organization: "../organization",
+			message:      "Claude organization id is unavailable",
+			calls:        2,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			captured := map[string]capturedCall{}
+			ctx := contextForCapture(t, "claude", `{"access_token":"tok"}`, nil, map[string]fakeResponse{
+				claudeGrantURL: {
+					status: 200,
+					body:   fmt.Sprintf(`{"cedar_ember":{"eligible":true,"at_limit":true,"grants":[{"id":%q,"resets_left":1,"usable_now":true}]}}`, test.grantID),
+				},
+				claudeProfileURL: {
+					status: 200,
+					body:   fmt.Sprintf(`{"organization":{"uuid":%q}}`, test.organization),
+				},
+			}, captured)
+			response, err := (claudeProvider{}).Reset(ctx)
+			if err != nil {
+				t.Fatalf("reset: %v", err)
+			}
+			if response.Success || response.Message != test.message {
+				t.Fatalf("reset response = %#v", response)
+			}
+			if len(captured) != test.calls {
+				t.Fatalf("claim should not be sent, captured calls = %#v", captured)
+			}
+		})
 	}
 }
 
