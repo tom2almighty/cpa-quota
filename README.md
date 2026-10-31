@@ -18,7 +18,8 @@ CLIProxyAPI（CPA 8.0+）额度插件：实现 v8 `QuotaProvider`，统一查询
 - Node.js 24+ / pnpm 12+
 
 ```bash
-cd web && pnpm install && pnpm run dev   # 单独调试前端
+(cd web && pnpm install && pnpm run dev) # 单独调试前端
+(cd web && pnpm run test)                # 密钥解析测试
 go test ./...                            # 后端测试
 ./build.sh                               # 构建前端并编译动态库
 ```
@@ -49,21 +50,23 @@ plugins:
 ### 本地打包
 
 ```bash
-./scripts/package-release.sh 0.2.3
+./scripts/package-release.sh 0.3.0
 ```
 
 产物写入 `release-dist/`，包含平台压缩包与 `checksums.txt`。
 
 ### 使用
 
+官方管理中心仅复用当前 v2 格式中已勾选记住的密钥；旧格式需在官方管理中心重新登录并保存，或在插件页面手动输入。
+
 在管理中心插件列表打开「额度监控」。页面通过 CPA v8 管理 API 读取凭据与额度，管理密钥优先复用 cpa-dashboard / 官方管理中心保存的值，也可以手动输入。
 
 支持渠道：
 
-- Claude（含 reset grants）
+- Claude（含 reset grants；按组织区分 Max 5x、Max 20x 与生效中的 Team 套餐）
 - Codex（含 reset credits；启用 `use_siwc` 时按 SIWC 凭据分区查询）
 - Antigravity
-- Kimi / Kimi AI
+- Kimi / Kimi AI（套餐名称取自官方账号资料；资料查询失败不影响额度显示）
 - xAI
 - Devin
 - Meta

@@ -448,6 +448,91 @@ func TestKimiFetch(t *testing.T) {
 	}
 }
 
+func TestKimiPlan(t *testing.T) {
+	for _, provider := range []string{"kimi", "kimi-ai"} {
+		for _, tc := range []struct {
+			name   string
+			status int
+			body   string
+			plan   string
+		}{
+			{"valid", 200, `{"user_id":"user","user_level_name":"  Allegretto  "}`, "Allegretto"},
+			{"missing user", 200, `{"user_level_name":"Allegretto"}`, ""},
+			{"empty user", 200, `{"user_id":" ","user_level_name":"Allegretto"}`, ""},
+			{"invalid user", 200, `{"user_id":123,"user_level_name":"Allegretto"}`, ""},
+			{"invalid plan", 200, `{"user_id":"user","user_level_name":123}`, ""},
+			{"empty plan", 200, `{"user_id":"user","user_level_name":" "}`, ""},
+			{"unavailable", 503, `{"error":"unavailable"}`, ""},
+			{"invalid JSON", 200, `invalid`, ""},
+		} {
+			t.Run(provider+"/"+tc.name, func(t *testing.T) {
+				usageURL := kimiUsageURL
+				profileURL := "https://api.kimi.com/coding/v1/me"
+				if provider == "kimi-ai" {
+					usageURL = kimiAIUsageURL
+					profileURL = "https://api.kimi.ai/coding/v1/me"
+				}
+				captured := map[string]capturedCall{}
+				ctx := contextForCapture(t, provider, `{"access_token":"tok"}`, nil, map[string]fakeResponse{
+					usageURL:   {status: 200, body: `{"usage":{"used":30,"limit":100}}`},
+					profileURL: {status: tc.status, body: tc.body},
+				}, captured)
+				response, err := kimiProvider{}.Fetch(ctx)
+				if err != nil {
+					t.Fatalf("fetch: %v", err)
+				}
+				if len(response.Groups) != 1 || !near(response.Groups[0].Buckets[0].RemainingFraction, 0.7) {
+					t.Fatalf("quota lost: %#v", response.Groups)
+				}
+				if tc.plan == "" {
+					if response.Subscription != nil {
+						t.Fatalf("unexpected subscription: %#v", response.Subscription)
+					}
+				} else if response.Subscription == nil || response.Subscription.Plan != tc.plan {
+					t.Fatalf("subscription = %#v, want %s", response.Subscription, tc.plan)
+				}
+				if len(captured) != 2 || captured[profileURL].method != http.MethodGet ||
+					captured[profileURL].header.Get("Authorization") != "Bearer tok" ||
+					captured[profileURL].header.Get("Accept") != "application/json" {
+					t.Fatalf("unexpected profile request: %#v", captured)
+				}
+			})
+		}
+	}
+}
+
+func TestClaudeSubscription(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		profile string
+		plan    string
+	}{
+		{"max 5x", `{"account":{"has_claude_max":true},"organization":{"rate_limit_tier":"default_claude_max_5x"}}`, "Max 5x"},
+		{"max 20x", `{"account":{"has_claude_max":true},"organization":{"rate_limit_tier":"  DEFAULT_CLAUDE_MAX_20X  "}}`, "Max 20x"},
+		{"active team", `{"account":{"has_claude_max":true},"organization":{"organization_type":"claude_team","subscription_status":"active","rate_limit_tier":"default_claude_max_20x"}}`, "Team"},
+		{"personal max", `{"account":{"has_claude_max":true},"organization":{"organization_type":"claude_team","subscription_status":"inactive","rate_limit_tier":"default_claude_ai"}}`, "Max"},
+		{"pro", `{"account":{"has_claude_pro":true},"organization":{"rate_limit_tier":"default_claude_ai"}}`, "Pro"},
+		{"free", `{"account":{"has_claude_max":false,"has_claude_pro":false},"organization":{"rate_limit_tier":"default_claude_ai"}}`, "Free"},
+		{"unknown", `{"organization":{"rate_limit_tier":"default_claude_ai"}}`, ""},
+		{"no profile", `null`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var profile map[string]any
+			if err := json.Unmarshal([]byte(tc.profile), &profile); err != nil {
+				t.Fatal(err)
+			}
+			subscription := claudeSubscription(profile)
+			if tc.plan == "" {
+				if subscription != nil {
+					t.Fatalf("unexpected subscription: %#v", subscription)
+				}
+			} else if subscription == nil || subscription.Plan != tc.plan {
+				t.Fatalf("subscription = %#v, want %s", subscription, tc.plan)
+			}
+		})
+	}
+}
+
 func TestXaiFetch(t *testing.T) {
 	ctx := contextFor(t, "xai", `{"access_token":"tok","sub":"user"}`, map[string]fakeResponse{
 		xaiWeeklyURL: {

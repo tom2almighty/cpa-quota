@@ -18,7 +18,8 @@ Requirements:
 - Node.js 24+ / pnpm 12+
 
 ```bash
-cd web && pnpm install && pnpm run dev   # frontend only
+(cd web && pnpm install && pnpm run dev) # frontend only
+(cd web && pnpm run test)                # key resolution tests
 go test ./...                            # backend tests
 ./build.sh                               # build frontend and shared library
 ```
@@ -49,21 +50,23 @@ Download the archive for your platform from [Releases](https://github.com/tom2al
 ### Local packaging
 
 ```bash
-./scripts/package-release.sh 0.2.3
+./scripts/package-release.sh 0.3.0
 ```
 
 Artifacts are written to `release-dist/` with platform archives and `checksums.txt`.
 
 ### Usage
 
+Only remembered keys in the official Management Center's current v2 storage format are reused. For older saved sessions, sign in and save the key again in the Management Center, or enter it manually on the plugin page.
+
 Open `Quota Monitor` from the Management Center plugin list. The page reads credentials and quota through the CPA v8 management API. It reuses the management key saved by cpa-dashboard or the official Management Center, or accepts a manually entered key.
 
 Supported providers:
 
-- Claude (including reset grants)
+- Claude (including reset grants; distinguishes Max 5x, Max 20x and active Team plans by organization)
 - Codex (including reset credits; queries the SIWC credential partition when `use_siwc` is enabled)
 - Antigravity
-- Kimi / Kimi AI
+- Kimi / Kimi AI (plan names come from the official account profile; profile failures do not hide quota)
 - xAI
 - Devin
 - Meta

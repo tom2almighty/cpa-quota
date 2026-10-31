@@ -362,11 +362,24 @@ func claudeSubscription(profile map[string]any) *model.QuotaSubscription {
 		return nil
 	}
 	plan := ""
-	if account, ok := profile["account"].(map[string]any); ok {
+	organization, _ := profile["organization"].(map[string]any)
+	tier := strings.ToLower(asString(organization["rate_limit_tier"]))
+	switch {
+	case strings.EqualFold(asString(organization["organization_type"]), "claude_team") &&
+		strings.EqualFold(asString(organization["subscription_status"]), "active"):
+		plan = "Team"
+	case strings.HasSuffix(tier, "claude_max_20x"):
+		plan = "Max 20x"
+	case strings.HasSuffix(tier, "claude_max_5x"):
+		plan = "Max 5x"
+	}
+	if account, ok := profile["account"].(map[string]any); ok && plan == "" {
 		if account["has_claude_max"] == true {
 			plan = "Max"
 		} else if account["has_claude_pro"] == true {
 			plan = "Pro"
+		} else if account["has_claude_max"] == false && account["has_claude_pro"] == false {
+			plan = "Free"
 		}
 	}
 	if plan == "" {

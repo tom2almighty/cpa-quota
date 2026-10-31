@@ -74,6 +74,20 @@ func (kimiProvider) Fetch(ctx *Context) (model.QuotaFetchResponse, error) {
 	if len(group.Buckets) > 0 {
 		response.Groups = []model.QuotaGroup{group}
 	}
+	// Profile data is optional; failures must not discard a successful usage query.
+	profileResp, profileErr := ctx.HTTP.Do(http.MethodGet, strings.TrimSuffix(url, "/usages")+"/me", map[string]string{
+		"Authorization": "Bearer " + token,
+		"Accept":        "application/json",
+	}, nil)
+	if profileErr == nil {
+		if profile, err := decodeBody(profileResp); err == nil {
+			userID, _ := profile["user_id"].(string)
+			plan, _ := profile["user_level_name"].(string)
+			if strings.TrimSpace(userID) != "" && strings.TrimSpace(plan) != "" {
+				response.Subscription = &model.QuotaSubscription{Plan: strings.TrimSpace(plan)}
+			}
+		}
+	}
 	return response, nil
 }
 
