@@ -231,12 +231,18 @@ export function QuotaTimeline({ items, loading = false }: { items: QuotaViewItem
   );
 
   const cells = useMemo(() => {
-    const cellMs = (spanEnd - spanStart) / span.cellCount;
     const todayStart = startOfDay(new Date(now)).getTime();
     return Array.from({ length: span.cellCount }, (_, index) => {
-      // 月视图按日历日推进，避免夏令时切换时按固定毫秒切片造成日期漂移
-      const at = mode === "monthly" ? addDays(span.start, index) : new Date(spanStart + index * cellMs);
-      const isDayStart = mode !== "session" || at.getHours() === 0;
+      // 按日历边界推进，避免夏令时切换时固定毫秒切片造成日期/时间漂移
+      const at =
+        mode === "session"
+          ? (() => {
+              const cell = addDays(span.start, Math.floor(index / 4));
+              cell.setHours((index % 4) * 6, 0, 0, 0);
+              return cell;
+            })()
+          : addDays(span.start, index);
+      const isDayStart = mode !== "session" || index % 4 === 0;
       return {
         key: `${at.getTime()}`,
         at,
@@ -253,7 +259,7 @@ export function QuotaTimeline({ items, loading = false }: { items: QuotaViewItem
         weekday: new Intl.DateTimeFormat(locale, { weekday: "short" }).format(at),
       };
     });
-  }, [locale, mode, now, span.cellCount, span.start, spanEnd, spanStart]);
+  }, [locale, mode, now, span.cellCount, span.start]);
 
   const rangeLabel =
     mode === "monthly"

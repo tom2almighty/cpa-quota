@@ -128,6 +128,7 @@ export type TimelineWindow = {
 
 type Candidate = {
   bucket: QuotaBucket;
+  windowKey: string;
   label: string;
   detail?: string;
   remaining: number;
@@ -137,8 +138,10 @@ type Candidate = {
 };
 
 /**
- * 每个凭据选一个窗口画成泳道：优先选不超过可见跨度、周期最长的窗口
- * （周视图看 7 天窗口，5 小时视图看 5 小时窗口），并列时取最近重置。
+ * 每个凭据选一个窗口画成泳道：优先选不超过可见跨度的账号窗口
+ * （周视图看 7 天窗口，5 小时视图看 5 小时窗口）。模型级窗口可能和账号窗口
+ * 周期相同（Claude Opus/Sonnet、Codex Spark），不能按重置时间抢走泳道；
+ * 没有账号窗口时再退回周期最长、最近重置的窗口。
  */
 export function buildTimelineLane(item: QuotaViewItem, maxPeriodHours: number): TimelineLane | null {
   const provider = (item.credential.provider ?? item.credential.type ?? "").toLowerCase();
@@ -152,6 +155,7 @@ export function buildTimelineLane(item: QuotaViewItem, maxPeriodHours: number): 
       if (periodHours === null || periodHours <= 0) continue;
       candidates.push({
         bucket,
+        windowKey: (bucket.window ?? "").toLowerCase(),
         label: bucketLabel(bucket),
         detail: bucket.description ? detailText(bucket.description) : undefined,
         remaining: bucketPercent(bucket),
@@ -165,12 +169,25 @@ export function buildTimelineLane(item: QuotaViewItem, maxPeriodHours: number): 
 
   const fitting = candidates.filter((candidate) => candidate.periodHours <= maxPeriodHours);
   const pool = fitting.length > 0 ? fitting : candidates;
-  const chosen = pool.reduce((best, candidate) => {
-    if (candidate.periodHours !== best.periodHours) {
-      return candidate.periodHours > best.periodHours ? candidate : best;
-    }
-    return candidate.anchorMs < best.anchorMs ? candidate : best;
-  });
+  const accountWindowKey =
+    maxPeriodHours <= 6
+      ? "five_hour"
+      : provider === "codex"
+        ? "weekly"
+        : provider === "claude" || provider === "anthropic"
+          ? "seven_day"
+          : "";
+  const accountWindow = accountWindowKey
+    ? fitting.find((candidate) => candidate.windowKey === accountWindowKey)
+    : undefined;
+  const chosen =
+    accountWindow ??
+    pool.reduce((best, candidate) => {
+      if (candidate.periodHours !== best.periodHours) {
+        return candidate.periodHours > best.periodHours ? candidate : best;
+      }
+      return candidate.anchorMs < best.anchorMs ? candidate : best;
+    });
 
   return {
     credential: item.credential,

@@ -77,6 +77,17 @@ export function resetQuota(key: string, authIndex: string): Promise<QuotaResetRe
   );
 }
 
+/** 重置成功后清除该凭据在 CPA 侧的冷却，否则刚重置的账号仍会被调度跳过。 */
+export function resetCredentialCooldown(
+  key: string,
+  authIndex: string,
+): Promise<{ status?: string; auth_index?: string; models?: string[] }> {
+  return request(key, "/v8/management/routing/cooldown/reset", {
+    method: "POST",
+    body: JSON.stringify({ auth_index: authIndex }),
+  });
+}
+
 /**
  * 查询缓存按密钥分域：密钥变了缓存不能复用，但也不能把密钥本身写进
  * queryKey（会被 devtools/缓存序列化）。这里只留一个稳定的短指纹。

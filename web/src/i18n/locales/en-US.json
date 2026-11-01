@@ -32,6 +32,7 @@
     "reset_confirm_desc": "This attempts to reset quota for {{name}} and may consume an upstream reset opportunity. Continue?",
     "reset_done": "Quota reset",
     "reset_failed": "Reset failed: {{message}}",
+    "reset_cooldown_failed": "Quota was reset, but clearing the CPA cooldown failed. Clear it from Auth Files.",
     "search_placeholder": "Search accounts, notes, providers",
     "no_match": "No matching accounts",
     "remaining": "{{percent}}% left",
