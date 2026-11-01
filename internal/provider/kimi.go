@@ -69,6 +69,19 @@ func (kimiProvider) Fetch(ctx *Context) (model.QuotaFetchResponse, error) {
 		}
 		addKimiBucket(&group, windowKeyValue, firstNonEmpty(asString(record["name"]), asString(record["title"]), ""), detail, record, ctx)
 	}
+	// Plans without a weekly limit report their monthly total as a 0-1 ratio
+	// under usages.limit_month_total; without it the card only shows the 5-hour window.
+	if usages, ok := payload["usages"].(map[string]any); ok {
+		if monthly, okMonthly := usages["limit_month_total"].(map[string]any); okMonthly {
+			if ratio, okRatio := mapNumber(monthly["used_ratio"]); okRatio {
+				group.Buckets = append(group.Buckets, model.QuotaBucket{
+					Window:            "monthly",
+					RemainingFraction: clampFraction(1 - ratio),
+					ResetTime:         kimiResetTime(monthly, ctx),
+				})
+			}
+		}
+	}
 
 	response := model.QuotaFetchResponse{}
 	if len(group.Buckets) > 0 {

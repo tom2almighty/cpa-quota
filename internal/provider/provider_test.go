@@ -448,6 +448,27 @@ func TestKimiFetch(t *testing.T) {
 	}
 }
 
+func TestKimiMonthlyLimit(t *testing.T) {
+	ctx := contextFor(t, "kimi", `{"access_token":"tok"}`, map[string]fakeResponse{
+		kimiUsageURL: {
+			status: 200,
+			body: `{"limits":[{"window":{"duration":300,"timeUnit":"TIME_UNIT_MINUTE"},"detail":{"remaining":15,"limit":20}}],
+				"usages":{"limit_month_total":{"used_ratio":0.25,"reset_time":"2026-10-31T00:00:00Z"}}}`,
+		},
+	})
+	response, err := kimiProvider{}.Fetch(ctx)
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if len(response.Groups) != 1 {
+		t.Fatalf("groups = %#v", response.Groups)
+	}
+	bucket := findBucket(response.Groups[0], "monthly")
+	if bucket == nil || !near(bucket.RemainingFraction, 0.75) || bucket.ResetTime != "2026-10-31T00:00:00Z" {
+		t.Fatalf("monthly bucket = %#v", bucket)
+	}
+}
+
 func TestKimiPlan(t *testing.T) {
 	for _, provider := range []string{"kimi", "kimi-ai"} {
 		for _, tc := range []struct {
