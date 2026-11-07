@@ -12,7 +12,7 @@ import (
 const (
 	xaiWeeklyURL     = "https://cli-chat-proxy.grok.com/v1/billing?format=credits"
 	xaiMonthlyURL    = "https://cli-chat-proxy.grok.com/v1/billing"
-	xaiClientVersion = "1.0.46"
+	xaiClientVersion = "1.0.70"
 )
 
 type xaiProvider struct{}
