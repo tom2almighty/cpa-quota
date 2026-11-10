@@ -18,6 +18,10 @@ const (
 	claudeGrantURL   = "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1"
 	claudeProfileURL = "https://api.anthropic.com/api/oauth/profile"
 	claudeClaimBase  = "https://api.anthropic.com/api/organizations"
+	// claudeUserAgent emulates the Claude Code CLI version CPA targets. Keep it in
+	// sync with CLIProxyAPI's measured baseline (internal/runtime/executor):
+	// Anthropic rejects models newer than the reported client version.
+	claudeUserAgent = "claude-cli/2.1.321 (external, cli)"
 )
 
 var (
@@ -339,7 +343,7 @@ func claudeHeaders(token string) map[string]string {
 		"Authorization":  "Bearer " + token,
 		"Content-Type":   "application/json",
 		"anthropic-beta": "oauth-2025-04-20",
-		"user-agent":     "claude-cli/2.1.280 (external, cli)",
+		"user-agent":     claudeUserAgent,
 	}
 }
 

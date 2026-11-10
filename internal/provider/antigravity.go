@@ -16,6 +16,12 @@ var antigravityQuotaURLs = []string{
 	"https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
 }
 
+// antigravityUserAgent mirrors the Antigravity Hub client UA: version, client
+// family, platform metadata and release changelist. Keep it aligned with the Hub
+// release CLIProxyAPI emulates (internal/misc/antigravity_version.go); Cloud Code
+// rejects newer models for clients below 2.23.0.
+const antigravityUserAgent = "antigravity/hub/2.29.0 (aidev_client; os_type=darwin; arch=arm64; cl=1013060670)"
+
 type antigravityProvider struct{}
 
 func init() {
@@ -43,7 +49,7 @@ func (antigravityProvider) Fetch(ctx *Context) (model.QuotaFetchResponse, error)
 	headers := map[string]string{
 		"Authorization": "Bearer " + token,
 		"Content-Type":  "application/json",
-		"User-Agent":    "antigravity/hub/2.23.0 darwin/arm64",
+		"User-Agent":    antigravityUserAgent,
 	}
 	var lastErr error
 	for _, url := range antigravityQuotaURLs {
