@@ -45,7 +45,6 @@ import {
   fetchQuota,
   isQuotaCredential,
   keyFingerprint,
-  resetCredentialCooldown,
   resetQuota,
   UnauthorizedError,
 } from "@/lib/api";
@@ -353,23 +352,12 @@ export function QuotaDashboard() {
     await Promise.all(results.map((result) => result.refetch()));
   };
 
+  // CPA 在插件重置成功后会一并清掉该凭据的额度与冷却，前端不再重复调用冷却清除接口。
   const reset = useMutation({
-    mutationFn: async (credential: Credential) => {
-      const authIndex = credential.auth_index ?? "";
-      const response = await resetQuota(key, authIndex);
-      if (!response.success) return { response, cooldownFailed: false };
-      try {
-        await resetCredentialCooldown(key, authIndex);
-        return { response, cooldownFailed: false };
-      } catch {
-        // 上游重置已经生效，冷却清除失败只提示人工处理，不再报重置失败。
-        return { response, cooldownFailed: true };
-      }
-    },
-    onSuccess: ({ response, cooldownFailed }, credential) => {
+    mutationFn: (credential: Credential) => resetQuota(key, credential.auth_index ?? ""),
+    onSuccess: (response, credential) => {
       if (response.success) {
         toast.success(t("quota.reset_done"));
-        if (cooldownFailed) toast.warning(t("quota.reset_cooldown_failed"));
       } else {
         toast.error(t("quota.reset_failed", { message: response.message ?? "" }));
       }
