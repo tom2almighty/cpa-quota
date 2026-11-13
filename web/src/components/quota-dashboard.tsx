@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useDeferredValue, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ClaudeResetDialog } from "@/components/claude-reset-dialog";
 import { KeyDialog } from "@/components/key-dialog";
 import { LanguageToggle } from "@/components/language-toggle";
 import { Logo } from "@/components/logo";
@@ -352,7 +353,12 @@ export function QuotaDashboard() {
     await Promise.all(results.map((result) => result.refetch()));
   };
 
-  // CPA 在插件重置成功后会一并清掉该凭据的额度与冷却，前端不再重复调用冷却清除接口。
+  // Claude 手动选择重置机会走 api-call，绕过了插件重置，成功后需显式清冷却；
+  // 其余渠道仍由插件服务端处理，CPA 会一并清掉额度与冷却，前端不再重复调用。
+  const resetProvider = resetTarget ? (resetTarget.provider ?? resetTarget.type ?? "").toLowerCase() : "";
+  const claudeResetOpen = resetTarget !== null && resetProvider === "claude";
+  const autoResetOpen = resetTarget !== null && resetProvider !== "claude";
+
   const reset = useMutation({
     mutationFn: (credential: Credential) => resetQuota(key, credential.auth_index ?? ""),
     onSuccess: (response, credential) => {
@@ -595,7 +601,7 @@ export function QuotaDashboard() {
         onClear={clear}
       />
 
-      <AlertDialog open={resetTarget !== null} onOpenChange={(open) => !open && setResetTarget(null)}>
+      <AlertDialog open={autoResetOpen} onOpenChange={(open) => !open && setResetTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("quota.reset_confirm_title")}</AlertDialogTitle>
@@ -614,6 +620,18 @@ export function QuotaDashboard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ClaudeResetDialog
+        key={resetTarget?.auth_index ?? "closed"}
+        open={claudeResetOpen}
+        credential={claudeResetOpen ? resetTarget : null}
+        managementKey={key}
+        keyId={keyFingerprint(key)}
+        onOpenChange={(open) => !open && setResetTarget(null)}
+        onCompleted={(authIndex) => {
+          void queryClient.invalidateQueries({ queryKey: ["quota", keyFingerprint(key), authIndex] });
+        }}
+      />
     </div>
   );
 }

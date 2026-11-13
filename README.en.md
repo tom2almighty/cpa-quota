@@ -10,6 +10,8 @@ The plugin queries each provider on the server and normalizes the result into th
 
 The dashboard provides card and quota-timeline views; the timeline supports monthly, 14-day and 5-hour spans, with provider filters, search, and quota reset. After a successful reset CPA also clears that credential's cooldown, so the account rejoins scheduling immediately instead of waiting it out.
 
+For Claude, a reset lists the upstream reset grants so you can pick the opportunity to spend. If the claim outcome is unknown, retrying reuses the same `request_id` to avoid a double spend.
+
 ## Development
 
 Requirements:

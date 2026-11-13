@@ -77,6 +77,36 @@ export function resetQuota(key: string, authIndex: string): Promise<QuotaResetRe
   );
 }
 
+export type ApiCallPayload = {
+  auth_index: string;
+  method: string;
+  url: string;
+  header?: Record<string, string>;
+  data?: string;
+};
+
+export type ApiCallResponse = {
+  status_code: number;
+  header?: Record<string, string[]>;
+  body?: string;
+};
+
+/** 通过 CPA v8 的通用代理接口，以指定凭据的令牌向上游发起请求。`$TOKEN$` 由 CPA 替换。 */
+export function apiCall(key: string, payload: ApiCallPayload): Promise<ApiCallResponse> {
+  return request<ApiCallResponse>(key, "/v8/management/requests/api-call", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** 清除 CPA 侧该凭据的额度与冷却状态，使刚重置的账号立即重新参与调度。 */
+export function resetCooldown(key: string, authIndex: string): Promise<{ models?: string[] }> {
+  return request<{ models?: string[] }>(key, "/v8/management/routing/cooldown/reset", {
+    method: "POST",
+    body: JSON.stringify({ auth_index: authIndex }),
+  });
+}
+
 /**
  * 查询缓存按密钥分域：密钥变了缓存不能复用，但也不能把密钥本身写进
  * queryKey（会被 devtools/缓存序列化）。这里只留一个稳定的短指纹。
