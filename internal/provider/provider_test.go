@@ -428,6 +428,91 @@ func TestAntigravityFetch(t *testing.T) {
 	}
 }
 
+func TestAntigravityFetchMergesPartialSummaries(t *testing.T) {
+	captured := map[string]capturedCall{}
+	ctx := contextForCapture(t, "antigravity", `{"access_token":"tok","installed":{"project_id":"proj"}}`, nil, map[string]fakeResponse{
+		antigravityQuotaURLs[0]: {
+			status: 200,
+			body:   `{"groups":[{"displayName":"Claude and GPT models","buckets":[{"bucketId":"claude-weekly","window":"weekly","remainingFraction":0.5}]}]}`,
+		},
+		antigravityQuotaURLs[1]: {
+			status: 200,
+			body: `{"groups":[{"displayName":"Claude and GPT models","buckets":[
+				{"bucketId":"claude-weekly","window":"weekly","remainingFraction":0.1},
+				{"bucketId":"claude-five-hour","window":"5h","remainingFraction":0.7}]}]}`,
+		},
+		antigravityQuotaURLs[2]: {
+			status: 200,
+			body:   `{"groups":[{"displayName":"Gemini Models","buckets":[{"bucketId":"gemini-weekly","window":"weekly","remainingFraction":0.9}]}]}`,
+		},
+	}, captured)
+
+	response, err := antigravityProvider{}.Fetch(ctx)
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if len(captured) != len(antigravityQuotaURLs) {
+		t.Fatalf("probed %d hosts, want %d", len(captured), len(antigravityQuotaURLs))
+	}
+	if len(response.Groups) != 2 {
+		t.Fatalf("groups = %#v", response.Groups)
+	}
+	claude := response.Groups[0]
+	if claude.DisplayName != "Claude and GPT models" || len(claude.Buckets) != 2 {
+		t.Fatalf("claude group = %#v", claude)
+	}
+	if bucket := findBucket(claude, "weekly"); bucket == nil || !near(bucket.RemainingFraction, 0.5) {
+		t.Fatalf("weekly bucket = %#v", bucket)
+	}
+	if bucket := findBucket(claude, "five_hour"); bucket == nil || !near(bucket.RemainingFraction, 0.7) {
+		t.Fatalf("five hour bucket = %#v", bucket)
+	}
+	if response.Groups[1].DisplayName != "Gemini Models" {
+		t.Fatalf("gemini group = %#v", response.Groups[1])
+	}
+}
+
+func TestAntigravityFetchStopsWhenGeminiIsPresent(t *testing.T) {
+	captured := map[string]capturedCall{}
+	ctx := contextForCapture(t, "antigravity", `{"access_token":"tok","installed":{"project_id":"proj"}}`, nil, map[string]fakeResponse{
+		antigravityQuotaURLs[0]: {
+			status: 200,
+			body: `{"groups":[{"displayName":"Gemini Models","buckets":[{"bucketId":"gemini-weekly","window":"weekly","remainingFraction":0.9}]},
+				{"displayName":"Claude and GPT models","buckets":[{"bucketId":"claude-weekly","window":"weekly","remainingFraction":0.5}]}]}`,
+		},
+	}, captured)
+
+	response, err := antigravityProvider{}.Fetch(ctx)
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if len(captured) != 1 {
+		t.Fatalf("probed %d hosts, want 1", len(captured))
+	}
+	if len(response.Groups) != 2 {
+		t.Fatalf("groups = %#v", response.Groups)
+	}
+}
+
+func TestAntigravityFetchKeepsPartialSummaryOnErrors(t *testing.T) {
+	ctx := contextFor(t, "antigravity", `{"access_token":"tok","installed":{"project_id":"proj"}}`, map[string]fakeResponse{
+		antigravityQuotaURLs[0]: {
+			status: 200,
+			body:   `{"groups":[{"displayName":"Claude and GPT models","buckets":[{"bucketId":"claude-weekly","window":"weekly","remainingFraction":0.5}]}]}`,
+		},
+		antigravityQuotaURLs[1]: {status: 403, body: `{"error":"forbidden"}`},
+		antigravityQuotaURLs[2]: {status: 403, body: `{"error":"forbidden"}`},
+	})
+
+	response, err := antigravityProvider{}.Fetch(ctx)
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if len(response.Groups) != 1 || len(response.Groups[0].Buckets) != 1 {
+		t.Fatalf("groups = %#v", response.Groups)
+	}
+}
+
 func TestKimiFetch(t *testing.T) {
 	ctx := contextFor(t, "kimi", `{"access_token":"tok"}`, map[string]fakeResponse{
 		kimiUsageURL: {
