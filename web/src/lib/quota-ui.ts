@@ -104,8 +104,12 @@ export type QuotaViewItem = {
 };
 
 export type TimelineLane = {
+  /** 泳道唯一标识；同一凭据拆成多个分组泳道时用于区分窗口 id。 */
+  key: string;
   credential: Credential;
   account: string;
+  /** 独立额度分组名称；仅 antigravity 多分组时存在。 */
+  groupName?: string;
   provider: string;
   label: string;
   detail?: string;
@@ -190,6 +194,7 @@ export function buildTimelineLane(item: QuotaViewItem, maxPeriodHours: number): 
     });
 
   return {
+    key: item.credential.auth_index ?? item.credential.id,
     credential: item.credential,
     account: credentialName(item.credential),
     provider,
@@ -200,6 +205,24 @@ export function buildTimelineLane(item: QuotaViewItem, maxPeriodHours: number): 
     anchorMs: chosen.anchorMs,
     periodHours: chosen.periodHours,
   };
+}
+
+/**
+ * 把凭据拆成时间线泳道。antigravity 的多个分组是相互独立的额度池，
+ * 不能共用一个泳道，否则不同分组的窗口会互相抢位；其它提供商的分组只是展示层级。
+ */
+export function buildTimelineLanes(item: QuotaViewItem, maxPeriodHours: number): TimelineLane[] {
+  const provider = (item.credential.provider ?? item.credential.type ?? "").toLowerCase();
+  const groups = item.quota?.groups ?? [];
+  if (provider !== "antigravity" || groups.length <= 1) {
+    const lane = buildTimelineLane(item, maxPeriodHours);
+    return lane ? [lane] : [];
+  }
+  return groups.flatMap((group, index) => {
+    const lane = buildTimelineLane({ ...item, quota: { ...item.quota, groups: [group] } }, maxPeriodHours);
+    if (!lane) return [];
+    return [{ ...lane, key: `${lane.key}:group-${index}`, groupName: group.displayName }];
+  });
 }
 
 function windowsIn(anchorMs: number, periodMs: number, fromMs: number, toMs: number) {
@@ -234,7 +257,7 @@ export function projectTimelineWindows(
       if (right <= 0 || left >= 100 || right <= left) return null;
       const state: TimelineWindow["state"] = window.endMs <= nowMs ? "past" : window.startMs <= nowMs ? "live" : "next";
       return {
-        id: `${lane.credential.auth_index ?? lane.credential.id}-${index}`,
+        id: `${lane.key}-${index}`,
         startMs: window.startMs,
         endMs: window.endMs,
         leftPercent: left,

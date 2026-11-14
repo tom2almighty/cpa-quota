@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import i18n from "@/i18n";
 import { useI18n } from "@/i18n/context";
 import {
-  buildTimelineLane,
+  buildTimelineLanes,
   projectTimelineWindows,
   providerLabel,
   type QuotaViewItem,
@@ -103,7 +103,7 @@ function TimelineBar({ lane, window, locale }: { lane: TimelineLane; window: Tim
         render={
           <button
             type="button"
-            aria-label={`${lane.account} ${lane.label} ${label}`}
+            aria-label={`${lane.account} ${lane.groupName ? `${lane.groupName} ` : ""}${lane.label} ${label}`}
             className={cn(
               "absolute inset-y-1 flex items-center justify-center overflow-hidden rounded-sm border text-[10px] font-medium transition-colors hover:brightness-105",
               barTone(window, lane),
@@ -118,7 +118,8 @@ function TimelineBar({ lane, window, locale }: { lane: TimelineLane; window: Tim
         <div className="space-y-1">
           <p className="font-medium">{lane.account}</p>
           <p className="text-muted-foreground">
-            {providerLabel(lane.provider)} · {lane.label}
+            {providerLabel(lane.provider)}
+            {lane.groupName ? ` · ${lane.groupName}` : ""} · {lane.label}
           </p>
           {lane.detail && <p className="text-muted-foreground">{lane.detail}</p>}
           <p>
@@ -155,6 +156,11 @@ function LaneRow({
         <p className="truncate text-xs font-medium" title={lane.account}>
           {lane.account}
         </p>
+        {lane.groupName && (
+          <p className="truncate text-[10px] text-muted-foreground" title={lane.groupName}>
+            {lane.groupName}
+          </p>
+        )}
         <div className="mt-1 flex items-center gap-1.5">
           <Badge variant="secondary" className="shrink-0 text-[10px] font-normal uppercase">
             {providerLabel(lane.provider)}
@@ -219,9 +225,8 @@ export function QuotaTimeline({ items, loading = false }: { items: QuotaViewItem
   const lanes = useMemo(
     () =>
       items
-        .map((item) => buildTimelineLane(item, mode === "session" ? 6 : spanHours))
-        .filter((lane): lane is TimelineLane => {
-          if (!lane) return false;
+        .flatMap((item) => buildTimelineLanes(item, mode === "session" ? 6 : spanHours))
+        .filter((lane) => {
           // 周视图不画 5 小时这类短窗口，避免一条泳道塞进几十个碎片；
           // 短窗口统一放到 5 小时视图里看。
           return mode === "session" ? lane.periodHours <= 6 : lane.periodHours >= 12;
@@ -376,7 +381,7 @@ export function QuotaTimeline({ items, loading = false }: { items: QuotaViewItem
             <div>
               {lanes.map((lane) => (
                 <LaneRow
-                  key={lane.credential.auth_index ?? lane.credential.id}
+                  key={lane.key}
                   lane={lane}
                   spanStart={spanStart}
                   spanEnd={spanEnd}
