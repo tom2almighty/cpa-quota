@@ -203,9 +203,9 @@ export function ClaudeResetDialog({
                         ? t("claude_reset.expires_at", { time: formatDateTime(grant.endsAt) })
                         : t("claude_reset.no_expiry")}
                     </span>
-                    <span className="block text-muted-foreground">
-                      {grant.givesBackWeekly ? t("claude_reset.hint_weekly") : t("claude_reset.hint_window")}
-                    </span>
+                    {grant.givesBackWeekly && (
+                      <span className="block text-muted-foreground">{t("claude_reset.hint_weekly")}</span>
+                    )}
                     {block && <span className="block text-warning">{blockReasonText(t, block)}</span>}
                     {lockedByPending && (
                       <span className="block text-warning">{t("claude_reset.pending_other_grant")}</span>

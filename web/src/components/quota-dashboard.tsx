@@ -5,6 +5,7 @@ import {
   ChartGantt,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
   KeyRound,
   LayoutGrid,
   RefreshCw,
@@ -177,6 +178,9 @@ function QuotaCard({
   const plan = quota?.subscription?.plan || quota?.subscription?.tierName;
   const canReset = RESET_PROVIDERS.has(provider);
   const name = credentialName(credential);
+  const appealUrl = credential.tos_appeal_url?.trim() ?? "";
+  const safeAppealUrl = /^https?:\/\//i.test(appealUrl) ? appealUrl : "";
+  const isTosViolation = credential.status_message === "tos_violation" || Boolean(safeAppealUrl);
 
   return (
     <Card size="sm" className="gap-2">
@@ -195,7 +199,29 @@ function QuotaCard({
                   {plan}
                 </Badge>
               )}
+              {isTosViolation ? (
+                <Badge variant="destructive" className="text-xs font-normal" title={t("quota.tos_violation_hint")}>
+                  {t("quota.tos_violation")}
+                </Badge>
+              ) : (
+                credential.disabled && (
+                  <Badge variant="outline" className="text-xs font-normal text-muted-foreground">
+                    {t("summary.disabled")}
+                  </Badge>
+                )
+              )}
             </div>
+            {safeAppealUrl && (
+              <a
+                href={safeAppealUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 inline-flex items-center gap-1 text-xs text-primary underline underline-offset-4 hover:text-primary/80"
+              >
+                {credential.tos_appeal_url_text?.trim() || t("quota.tos_appeal_default")}
+                <ExternalLink className="size-3" />
+              </a>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
             {canReset && (

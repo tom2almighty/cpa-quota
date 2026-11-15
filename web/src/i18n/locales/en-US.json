@@ -39,7 +39,10 @@
     "page_summary": "{{from}}–{{to}} of {{total}}",
     "per_page": "{{count}} per page",
     "page_size_label": "Rows per page",
-    "refresh_page": "Refresh page"
+    "refresh_page": "Refresh page",
+    "tos_violation": "TOS Violation",
+    "tos_violation_hint": "Disabled by CPA after an upstream 403 TOS_VIOLATION response (the quota endpoint may still report balance)",
+    "tos_appeal_default": "Open appeal link"
   },
   "claude_reset": {
     "title": "Reset Claude quota",
