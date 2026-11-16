@@ -188,7 +188,7 @@ func claudeFableLimit(usage map[string]any) (float64, any, bool) {
 		scope, _ := record["scope"].(map[string]any)
 		model, _ := scope["model"].(map[string]any)
 		name := strings.ToLower(strings.TrimSpace(asString(model["display_name"])))
-		if name != "fable" && name != "fable 5" {
+		if name != "fable" && !strings.HasPrefix(name, "fable ") {
 			continue
 		}
 		percent, okPercent := mapNumber(record["percent"])

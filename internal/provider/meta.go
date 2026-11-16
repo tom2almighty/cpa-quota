@@ -29,6 +29,7 @@ func (metaProvider) Fetch(ctx *Context) (model.QuotaFetchResponse, error) {
 		"Accept":        "application/json",
 		"Content-Type":  "application/json",
 		"Authorization": "Bearer " + token,
+		"User-Agent":    "muse-code/1.0.2",
 		"x-api-version": "1.0.0",
 	}, []byte("{}"))
 	if err != nil {

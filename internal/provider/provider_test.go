@@ -21,6 +21,7 @@ type fakeResponse struct {
 type capturedCall struct {
 	method string
 	header http.Header
+	body   []byte
 }
 
 func fakeClient(t *testing.T, routes map[string]fakeResponse) *hostapi.Client {
@@ -38,12 +39,17 @@ func fakeClientCapture(t *testing.T, routes map[string]fakeResponse, captured ma
 			Method  string              `json:"method"`
 			URL     string              `json:"url"`
 			Headers map[string][]string `json:"headers"`
+			Body    []byte              `json:"body"`
 		}
 		if err := json.Unmarshal(payload, &request); err != nil {
 			t.Fatalf("decode host request: %v", err)
 		}
 		if captured != nil {
-			captured[request.URL] = capturedCall{method: request.Method, header: http.Header(request.Headers)}
+			captured[request.URL] = capturedCall{
+				method: request.Method,
+				header: http.Header(request.Headers),
+				body:   request.Body,
+			}
 		}
 		response, ok := routes[request.URL]
 		if !ok {
@@ -230,23 +236,27 @@ func TestClaudeFetch(t *testing.T) {
 }
 
 func TestClaudeFetchPrefersFableLimit(t *testing.T) {
-	ctx := contextFor(t, "claude", `{"access_token":"tok"}`, map[string]fakeResponse{
-		claudeUsageURL: {
-			status: 200,
-			body: `{
-				"five_hour":{"utilization":10,"resets_at":"2026-09-24T05:00:00Z"},
-				"limits":[{"kind":"weekly_scoped","is_active":true,"percent":30,"resets_at":"2026-09-30T00:00:00Z",
-					"scope":{"model":{"display_name":"Fable"}}}],
-				"iguana_necktie":{"utilization":99,"resets_at":"2026-10-01T00:00:00Z"}
-			}`,
-		},
-	})
-	response, err := claudeProvider{}.Fetch(ctx)
-	if err != nil {
-		t.Fatalf("fetch: %v", err)
-	}
-	if bucket := findBucket(response.Groups[0], "seven_day_fable"); bucket == nil || !near(bucket.RemainingFraction, 0.7) {
-		t.Fatalf("fable bucket = %#v", bucket)
+	for _, displayName := range []string{"Fable", "Fable 5.2"} {
+		t.Run(displayName, func(t *testing.T) {
+			ctx := contextFor(t, "claude", `{"access_token":"tok"}`, map[string]fakeResponse{
+				claudeUsageURL: {
+					status: 200,
+					body: `{
+						"five_hour":{"utilization":10,"resets_at":"2026-09-24T05:00:00Z"},
+						"limits":[{"kind":"weekly_scoped","is_active":true,"percent":30,"resets_at":"2026-09-30T00:00:00Z",
+							"scope":{"model":{"display_name":"` + displayName + `"}}}],
+						"iguana_necktie":{"utilization":99,"resets_at":"2026-10-01T00:00:00Z"}
+					}`,
+				},
+			})
+			response, err := claudeProvider{}.Fetch(ctx)
+			if err != nil {
+				t.Fatalf("fetch: %v", err)
+			}
+			if bucket := findBucket(response.Groups[0], "seven_day_fable"); bucket == nil || !near(bucket.RemainingFraction, 0.7) {
+				t.Fatalf("fable bucket = %#v", bucket)
+			}
+		})
 	}
 }
 
@@ -687,16 +697,23 @@ func TestDevinFetch(t *testing.T) {
 }
 
 func TestMetaFetch(t *testing.T) {
-	ctx := contextFor(t, "meta", `{"dca_token":"tok"}`, map[string]fakeResponse{
+	captured := map[string]capturedCall{}
+	ctx := contextForCapture(t, "meta", `{"dca_token":"tok"}`, nil, map[string]fakeResponse{
 		metaQuotaURL: {
 			status: 200,
 			body: `{"subs_tier_name":"Pro","subs_usage":{"window":{"used_percent":35,"resets_at":1790500000,"window_duration_mins":180},
 				"weekly":{"used_percent":70,"resets_at":1791000000}}}`,
 		},
-	})
+	}, captured)
 	response, err := metaProvider{}.Fetch(ctx)
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
+	}
+	if call := captured[metaQuotaURL]; call.method != http.MethodPost ||
+		call.header.Get("User-Agent") != "muse-code/1.0.2" ||
+		call.header.Get("Authorization") != "Bearer tok" ||
+		string(call.body) != "{}" {
+		t.Fatalf("meta request = %#v", call)
 	}
 	if response.Subscription == nil || response.Subscription.Plan != "Pro" {
 		t.Fatalf("plan = %#v", response.Subscription)
