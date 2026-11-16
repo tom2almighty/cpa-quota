@@ -52,7 +52,7 @@ Download the archive for your platform from [Releases](https://github.com/tom2al
 ### Local packaging
 
 ```bash
-./scripts/package-release.sh 0.6.2
+./scripts/package-release.sh 0.6.3
 ```
 
 Artifacts are written to `release-dist/` with platform archives and `checksums.txt`.
