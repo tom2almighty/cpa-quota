@@ -499,6 +499,9 @@ func TestAntigravityFetchStopsWhenGeminiIsPresent(t *testing.T) {
 	if len(captured) != 1 {
 		t.Fatalf("probed %d hosts, want 1", len(captured))
 	}
+	if got := captured[antigravityQuotaURLs[0]].header.Get("User-Agent"); got != antigravityUserAgent {
+		t.Fatalf("antigravity user-agent = %q, want %q", got, antigravityUserAgent)
+	}
 	if len(response.Groups) != 2 {
 		t.Fatalf("groups = %#v", response.Groups)
 	}
