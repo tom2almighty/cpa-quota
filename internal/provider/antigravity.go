@@ -20,7 +20,7 @@ var antigravityQuotaURLs = []string{
 // family, platform metadata and release changelist. Keep it aligned with the Hub
 // release CLIProxyAPI emulates (internal/misc/antigravity_version.go); Cloud Code
 // rejects newer models for clients below 2.23.0.
-const antigravityUserAgent = "antigravity/hub/2.33.0 (aidev_client; os_type=darwin; arch=arm64; cl=1023160026)"
+const antigravityUserAgent = "antigravity/hub/2.34.0 (aidev_client; os_type=darwin; arch=arm64; cl=1026637980)"
 
 type antigravityProvider struct{}
 
