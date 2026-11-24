@@ -42,7 +42,8 @@
     "refresh_page": "Refresh page",
     "tos_violation": "TOS Violation",
     "tos_violation_hint": "Disabled by CPA after an upstream 403 TOS_VIOLATION response (the quota endpoint may still report balance)",
-    "tos_appeal_default": "Open appeal link"
+    "tos_appeal_default": "Open appeal link",
+    "open_verification_link": "Open verification link"
   },
   "claude_reset": {
     "title": "Reset Claude quota",
@@ -109,7 +110,8 @@
     "code_review": "Code review",
     "credits": "Credits",
     "reset_grants": "Reset grants",
-    "reset_credits": "Reset credits"
+    "reset_credits": "Reset credits",
+    "premium_interactions": "Premium interactions"
   },
   "summary": {
     "disabled": "Disabled",

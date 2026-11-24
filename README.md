@@ -2,7 +2,7 @@
 
 [English](README.en.md)
 
-CLIProxyAPI（CPA 8.0+）额度插件：实现 v8 `QuotaProvider`，统一查询 Claude、Codex、Antigravity、Kimi、xAI、Devin、Meta 的额度与重置窗口，并内置额度看板。
+CLIProxyAPI（CPA 8.0+）额度插件：实现 v8 `QuotaProvider`，统一查询 Claude、Codex、Antigravity、Kimi、xAI、Devin、Copilot、Meta 的额度与重置窗口，并内置额度看板。
 
 ## 项目简介
 
@@ -71,6 +71,7 @@ plugins:
 - Kimi / Kimi AI（套餐名称取自官方账号资料；资料查询失败不影响额度显示）
 - xAI
 - Devin
+- GitHub Copilot（查询 `premium_interactions` 剩余比例、次数与月度重置日期）
 - Meta
 
 ### Docker

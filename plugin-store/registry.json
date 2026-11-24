@@ -4,13 +4,13 @@
     {
       "id": "cpa-quota",
       "name": "CPA Quota",
-      "description": "CLIProxyAPI quota monitor: implements the v8 QuotaProvider for Claude, Codex, Antigravity, Kimi, xAI, Devin and Meta, with normalized quota windows and an embedded dashboard.",
+      "description": "CLIProxyAPI quota monitor: implements the v8 QuotaProvider for Claude, Codex, Antigravity, Kimi, xAI, Devin, Copilot and Meta, with normalized quota windows and an embedded dashboard.",
       "locales": {
         "zh-CN": {
-          "description": "CPA 额度监控：实现 v8 QuotaProvider，统一查询 Claude、Codex、Antigravity、Kimi、xAI、Devin、Meta 的额度与重置窗口，并内置额度看板。"
+          "description": "CPA 额度监控：实现 v8 QuotaProvider，统一查询 Claude、Codex、Antigravity、Kimi、xAI、Devin、Copilot、Meta 的额度与重置窗口，并内置额度看板。"
         },
         "en": {
-          "description": "CLIProxyAPI quota monitor: implements the v8 QuotaProvider for Claude, Codex, Antigravity, Kimi, xAI, Devin and Meta, with normalized quota windows and an embedded dashboard."
+          "description": "CLIProxyAPI quota monitor: implements the v8 QuotaProvider for Claude, Codex, Antigravity, Kimi, xAI, Devin, Copilot and Meta, with normalized quota windows and an embedded dashboard."
         }
       },
       "author": "tom2almighty",

@@ -42,7 +42,8 @@
     "refresh_page": "刷新本页",
     "tos_violation": "TOS 违规封禁",
     "tos_violation_hint": "该凭据因上游返回 403 TOS_VIOLATION 被 CPA 自动停用（额度接口仍可能返回余额）",
-    "tos_appeal_default": "打开申诉链接"
+    "tos_appeal_default": "打开申诉链接",
+    "open_verification_link": "打开验证链接"
   },
   "claude_reset": {
     "title": "重置 Claude 额度",
@@ -109,7 +110,8 @@
     "code_review": "代码审查",
     "credits": "积分",
     "reset_grants": "主动重置",
-    "reset_credits": "主动重置卡"
+    "reset_credits": "主动重置卡",
+    "premium_interactions": "高级请求"
   },
   "summary": {
     "disabled": "未启用",

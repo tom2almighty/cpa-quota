@@ -2,7 +2,7 @@
 
 [中文](README.md)
 
-CLIProxyAPI (CPA 8.0+) quota plugin: implements the v8 `QuotaProvider` for Claude, Codex, Antigravity, Kimi, xAI, Devin and Meta, with normalized quota windows and an embedded dashboard.
+CLIProxyAPI (CPA 8.0+) quota plugin: implements the v8 `QuotaProvider` for Claude, Codex, Antigravity, Kimi, xAI, Devin, Copilot and Meta, with normalized quota windows and an embedded dashboard.
 
 ## Overview
 
@@ -71,6 +71,7 @@ Supported providers:
 - Kimi / Kimi AI (plan names come from the official account profile; profile failures do not hide quota)
 - xAI
 - Devin
+- GitHub Copilot (queries `premium_interactions` remaining share, counts and monthly reset date)
 - Meta
 
 ### Docker

@@ -19,6 +19,9 @@ export function providerLabel(provider: string): string {
       return "xAI";
     case "devin":
       return "Devin";
+    case "copilot":
+    case "github-copilot":
+      return "Copilot";
     case "meta":
       return "Meta";
     default:
@@ -82,7 +85,7 @@ export function windowPeriodHours(window: string | undefined, description?: stri
   if (key.includes("weekly") || key === "week" || key.includes("seven_day") || key.includes("seven-day")) {
     return 7 * 24;
   }
-  if (key.includes("monthly") || key === "month") return 30 * 24;
+  if (key.includes("monthly") || key === "month" || key === "premium_interactions") return 30 * 24;
   if (key === "daily" || key === "day") return 24;
   const hours = key.match(/^hours?_(\d+(?:\.\d+)?)$/);
   if (hours) return Number(hours[1]);

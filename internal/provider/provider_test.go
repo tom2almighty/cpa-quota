@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 	"testing"
 
 	"cpa-quota/internal/hostapi"
@@ -727,4 +728,164 @@ func TestMetaFetch(t *testing.T) {
 	if bucket := findBucket(response.Groups[0], "session"); bucket.Description != "3 hour window" {
 		t.Fatalf("session description = %q", bucket.Description)
 	}
+}
+
+func TestCopilotFetch(t *testing.T) {
+	captured := map[string]capturedCall{}
+	ctx := contextForCapture(t, "copilot", `{"access_token":"infer-tok","refresh_token":"gho_valid_123"}`, nil, map[string]fakeResponse{
+		copilotUserURL: {
+			status: 200,
+			body: `{
+				"copilot_plan":"individual",
+				"quota_reset_date":"2026-12-01",
+				"quota_snapshots":{"premium_interactions":{"quota_remaining":1150.9,"entitlement":20000,"percent_remaining":5.7}}
+			}`,
+		},
+	}, captured)
+
+	response, err := copilotProvider{}.Fetch(ctx)
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	call := captured[copilotUserURL]
+	if call.method != http.MethodGet ||
+		call.header.Get("Authorization") != "Bearer gho_valid_123" ||
+		call.header.Get("User-Agent") != copilotUserAgent ||
+		call.header.Get("Accept") != "application/json" {
+		t.Fatalf("copilot request = %#v", call)
+	}
+	if response.Subscription == nil || response.Subscription.Plan != "individual" {
+		t.Fatalf("subscription = %#v", response.Subscription)
+	}
+	if len(response.Groups) != 1 || len(response.Groups[0].Buckets) != 1 {
+		t.Fatalf("groups = %#v", response.Groups)
+	}
+	bucket := response.Groups[0].Buckets[0]
+	if bucket.Window != "premium_interactions" || !near(bucket.RemainingFraction, 0.057) ||
+		bucket.Description != "1150.9 / 20000" || bucket.ResetTime != "2026-12-01T00:00:00Z" {
+		t.Fatalf("bucket = %#v", bucket)
+	}
+}
+
+func TestCopilotFetchEdgeCases(t *testing.T) {
+	t.Run("percentage only and zero remaining", func(t *testing.T) {
+		ctx := contextFor(t, "copilot", `{"refresh_token":"gho_ok"}`, map[string]fakeResponse{
+			copilotUserURL: {
+				status: 200,
+				body:   `{"quota_snapshots":{"premium_interactions":{"percent_remaining":" 0 "}}}`,
+			},
+		})
+		response, err := copilotProvider{}.Fetch(ctx)
+		if err != nil {
+			t.Fatalf("fetch: %v", err)
+		}
+		bucket := response.Groups[0].Buckets[0]
+		if !near(bucket.RemainingFraction, 0) || bucket.Description != "" {
+			t.Fatalf("bucket = %#v", bucket)
+		}
+	})
+
+	t.Run("unlimited summary", func(t *testing.T) {
+		ctx := contextFor(t, "copilot", `{"refresh_token":"gho_ok"}`, map[string]fakeResponse{
+			copilotUserURL: {
+				status: 200,
+				body:   `{"copilot_plan":"enterprise","quota_snapshots":{"premium_interactions":{"unlimited":true}}}`,
+			},
+		})
+		response, err := copilotProvider{}.Fetch(ctx)
+		if err != nil {
+			t.Fatalf("fetch: %v", err)
+		}
+		if len(response.Groups) != 0 || len(response.Summary) != 1 || response.Summary[0].Unit != "unlimited" {
+			t.Fatalf("response = %#v", response)
+		}
+	})
+
+	t.Run("requires refresh_token and never sends access_token", func(t *testing.T) {
+		captured := map[string]capturedCall{}
+		ctx := contextForCapture(t, "copilot", `{"access_token":"infer-only"}`, nil, map[string]fakeResponse{}, captured)
+		if _, err := (copilotProvider{}).Fetch(ctx); err == nil {
+			t.Fatal("expected error when refresh_token is missing")
+		}
+		if len(captured) != 0 {
+			t.Fatalf("unexpected upstream calls: %#v", captured)
+		}
+	})
+
+	t.Run("http error does not leak response body", func(t *testing.T) {
+		ctx := contextFor(t, "copilot", `{"refresh_token":"gho_secret"}`, map[string]fakeResponse{
+			copilotUserURL: {status: 401, body: `{"secret":"gho_secret"}`},
+		})
+		_, err := copilotProvider{}.Fetch(ctx)
+		if err == nil || strings.Contains(err.Error(), "gho_secret") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestAntigravityFetchValidationRequired(t *testing.T) {
+	const link = "https://accounts.google.com/signin/continue?test=1"
+	denied := func(details string) fakeResponse {
+		return fakeResponse{
+			status: 403,
+			body:   fmt.Sprintf(`{"error":{"message":"Verify this account.","details":%s}}`, details),
+		}
+	}
+
+	t.Run("prefers actionable validation url across fallback failures", func(t *testing.T) {
+		ctx := contextFor(t, "antigravity", `{"access_token":"tok","installed":{"project_id":"proj"}}`, map[string]fakeResponse{
+			antigravityQuotaURLs[0]: denied(`[{"reason":"VALIDATION_REQUIRED"}]`),
+			antigravityQuotaURLs[1]: denied(fmt.Sprintf(`[{"metadata":{"validation_url":%q}}]`, link)),
+			antigravityQuotaURLs[2]: {status: 404, body: `{"error":"not found"}`},
+		})
+		_, err := antigravityProvider{}.Fetch(ctx)
+		if err == nil || !strings.Contains(err.Error(), "Verify this account.") || !strings.Contains(err.Error(), link) {
+			t.Fatalf("error = %v, want message and link", err)
+		}
+	})
+
+	t.Run("validation wins over empty groups", func(t *testing.T) {
+		ctx := contextFor(t, "antigravity", `{"access_token":"tok","installed":{"project_id":"proj"}}`, map[string]fakeResponse{
+			antigravityQuotaURLs[0]: {status: 200, body: `{"groups":[]}`},
+			antigravityQuotaURLs[1]: denied(fmt.Sprintf(`[{"metadata":{"validationUrl":%q}}]`, link)),
+			antigravityQuotaURLs[2]: {status: 200, body: `{"groups":[{"buckets":[{}]}]}`},
+		})
+		_, err := antigravityProvider{}.Fetch(ctx)
+		if err == nil || !strings.Contains(err.Error(), link) {
+			t.Fatalf("error = %v, want validation error with link", err)
+		}
+	})
+
+	t.Run("partial quota wins over validation challenge", func(t *testing.T) {
+		ctx := contextFor(t, "antigravity", `{"access_token":"tok","installed":{"project_id":"proj"}}`, map[string]fakeResponse{
+			antigravityQuotaURLs[0]: {
+				status: 200,
+				body:   `{"groups":[{"displayName":"Claude and GPT models","buckets":[{"bucketId":"claude-weekly","window":"weekly","remainingFraction":0.5}]}]}`,
+			},
+			antigravityQuotaURLs[1]: denied(fmt.Sprintf(`[{"reason":"VALIDATION_REQUIRED","metadata":{"validation_url":%q}}]`, link)),
+			antigravityQuotaURLs[2]: {status: 200, body: `{"groups":[]}`},
+		})
+		response, err := antigravityProvider{}.Fetch(ctx)
+		if err != nil || len(response.Groups) != 1 {
+			t.Fatalf("response = %#v, err = %v", response, err)
+		}
+	})
+
+	t.Run("rejects untrusted validation urls", func(t *testing.T) {
+		for _, unsafe := range []string{
+			"javascript:alert(1)",
+			"http://accounts.google.com/",
+			"https://accounts.google.com.example.org/",
+			"https://user@accounts.google.com/",
+			"https://accounts.google.com:8080/",
+		} {
+			parsed := parseAntigravityValidationError(403, []byte(fmt.Sprintf(
+				`{"error":{"message":"Verify this account.","details":[{"reason":"VALIDATION_REQUIRED","metadata":{"validation_url":%q}}]}}`,
+				unsafe,
+			)))
+			if parsed == nil || parsed.url != "" || parsed.message != "Verify this account." {
+				t.Fatalf("unsafe %q -> %#v", unsafe, parsed)
+			}
+		}
+	})
 }

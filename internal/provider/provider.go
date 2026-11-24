@@ -47,7 +47,7 @@ func Get(name string) (Provider, bool) {
 
 // SupportedProviders lists the provider keys this plugin handles.
 func SupportedProviders() []string {
-	return []string{"claude", "codex", "antigravity", "kimi", "kimi-ai", "xai", "devin", "meta"}
+	return []string{"claude", "codex", "antigravity", "kimi", "kimi-ai", "xai", "devin", "copilot", "meta"}
 }
 
 func normalizeProvider(name string) string {
@@ -59,6 +59,8 @@ func normalizeProvider(name string) string {
 		return "kimi-ai"
 	case "x-ai", "grok":
 		return "xai"
+	case "github-copilot":
+		return "copilot"
 	case "muse":
 		return "meta"
 	default:
@@ -322,6 +324,8 @@ func providerLabel(name string) string {
 		return "xAI"
 	case "devin":
 		return "Devin"
+	case "copilot":
+		return "Copilot"
 	case "meta":
 		return "Meta"
 	default:

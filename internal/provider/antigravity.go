@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -54,13 +55,21 @@ func (antigravityProvider) Fetch(ctx *Context) (model.QuotaFetchResponse, error)
 	merged := newAntigravityMerger()
 	hadSuccess := false
 	var lastErr error
-	for _, url := range antigravityQuotaURLs {
-		resp, err := ctx.HTTP.Do(http.MethodPost, url, headers, body)
+	var validationErr *antigravityValidationError
+	for _, endpoint := range antigravityQuotaURLs {
+		resp, err := ctx.HTTP.Do(http.MethodPost, endpoint, headers, body)
 		if err != nil {
 			lastErr = err
 			continue
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			if resp.StatusCode == http.StatusForbidden && (validationErr == nil || validationErr.url == "") {
+				if parsed := parseAntigravityValidationError(resp.StatusCode, resp.Body); parsed != nil {
+					if validationErr == nil || parsed.url != "" {
+						validationErr = parsed
+					}
+				}
+			}
 			lastErr = fmt.Errorf("antigravity quota returned %d: %s", resp.StatusCode, truncate(string(resp.Body), 200))
 			// An invalid token fails on every host, so stop probing.
 			if resp.StatusCode == http.StatusUnauthorized {
@@ -81,13 +90,89 @@ func (antigravityProvider) Fetch(ctx *Context) (model.QuotaFetchResponse, error)
 			break
 		}
 	}
-	if !hadSuccess {
-		if lastErr == nil {
-			lastErr = fmt.Errorf("antigravity quota is unavailable")
-		}
-		return model.QuotaFetchResponse{}, lastErr
+	parsed := parseAntigravityQuota(map[string]any{"groups": merged.payloadGroups()})
+	if len(parsed.Groups) > 0 {
+		return parsed, nil
 	}
-	return parseAntigravityQuota(map[string]any{"groups": merged.payloadGroups()}), nil
+	if validationErr != nil {
+		return model.QuotaFetchResponse{}, validationErr
+	}
+	if hadSuccess {
+		return parsed, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("antigravity quota is unavailable")
+	}
+	return model.QuotaFetchResponse{}, lastErr
+}
+
+type antigravityValidationError struct {
+	message string
+	url     string
+}
+
+func (e *antigravityValidationError) Error() string {
+	if e.url != "" {
+		return fmt.Sprintf("%s (%s)", e.message, e.url)
+	}
+	return e.message
+}
+
+func googleAccountsURL(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme != "https" || parsed.Host != "accounts.google.com" || parsed.User != nil {
+		return ""
+	}
+	return parsed.String()
+}
+
+func parseAntigravityValidationError(statusCode int, body []byte) *antigravityValidationError {
+	if statusCode != http.StatusForbidden || len(body) == 0 {
+		return nil
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil
+	}
+	errObj := getMap(payload, "error")
+	if errObj == nil {
+		return nil
+	}
+	details := getArray(errObj, "details")
+	if len(details) == 0 {
+		return nil
+	}
+	required := false
+	validationURL := ""
+	for _, raw := range details {
+		detail, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if asString(detail["reason"]) == "VALIDATION_REQUIRED" {
+			required = true
+		}
+		if validationURL == "" {
+			if meta := getMap(detail, "metadata"); meta != nil {
+				validationURL = firstNonEmpty(
+					googleAccountsURL(asString(meta["validation_url"])),
+					googleAccountsURL(asString(meta["validationUrl"])),
+				)
+			}
+		}
+	}
+	if !required && validationURL == "" {
+		return nil
+	}
+	message := asString(errObj["message"])
+	if message == "" {
+		message = "Google account verification is required"
+	}
+	return &antigravityValidationError{message: message, url: validationURL}
 }
 
 // antigravityMerger accumulates quota groups across hosts. The first successful

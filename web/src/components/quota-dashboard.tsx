@@ -53,6 +53,7 @@ import {
 import { formatDateTime } from "@/lib/format";
 import { bucketLabel, bucketTone, credentialName, detailText, providerLabel } from "@/lib/quota-ui";
 import { cn } from "@/lib/utils";
+import { extractGoogleValidationLink } from "@/lib/validation-link";
 import type { Credential, QuotaBucket, QuotaGroup, QuotaMetric, QuotaResponse } from "@/types";
 
 const DEFAULT_PAGE_SIZE = 12;
@@ -257,16 +258,34 @@ function QuotaCard({
             <Skeleton className="h-6 w-full" />
           </div>
         ) : error ? (
-          <div className="rounded-md bg-destructive/10 p-2.5 text-xs text-destructive">
-            <p className="font-medium">{t("quota.query_failed")}</p>
-            <p className="mt-1 warp-break-words opacity-90">{error.message}</p>
-            <Button variant="outline" size="sm" className="mt-2 h-6 text-xs" onClick={onRefresh}>
-              {t("common.retry")}
-            </Button>
-          </div>
-        ) : groups.length === 0 ? (
+          (() => {
+            const { text, url } = extractGoogleValidationLink(error.message);
+            return (
+              <div className="rounded-md bg-destructive/10 p-2.5 text-xs text-destructive">
+                <p className="font-medium">{t("quota.query_failed")}</p>
+                <p className="mt-1 warp-break-words opacity-90">{text}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {url && (
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 font-medium underline underline-offset-4 hover:opacity-80"
+                    >
+                      {t("quota.open_verification_link")}
+                      <ExternalLink className="size-3" />
+                    </a>
+                  )}
+                  <Button variant="outline" size="sm" className="h-6 text-xs" onClick={onRefresh}>
+                    {t("common.retry")}
+                  </Button>
+                </div>
+              </div>
+            );
+          })()
+        ) : groups.length === 0 && summary.length === 0 ? (
           <p className="py-2 text-center text-xs text-muted-foreground">{t("quota.no_details")}</p>
-        ) : (
+        ) : groups.length > 0 ? (
           <div className="space-y-2.5">
             {groups.map((group) => (
               <GroupBlock
@@ -280,10 +299,10 @@ function QuotaCard({
               />
             ))}
           </div>
-        )}
+        ) : null}
 
         {summary.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 border-t pt-2">
+          <div className={cn("flex flex-wrap gap-1.5", groups.length > 0 && "border-t pt-2")}>
             {summary.map((metric) => (
               <Badge
                 key={metric.key}
